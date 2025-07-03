@@ -102,6 +102,9 @@
 
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.157.0/build/three.module.js';
+        import { GLTFLoader } from 'https://unpkg.com/three@0.157.0/examples/jsm/loaders/GLTFLoader.js';
+        import { XRControllerModelFactory } from 'https://unpkg.com/three@0.157.0/examples/jsm/webxr/XRControllerModelFactory.js';
+        import { XRHandModelFactory } from 'https://unpkg.com/three@0.157.0/examples/jsm/webxr/XRHandModelFactory.js';
 
         const canvas = document.getElementById('webxr-canvas');
         const startButton = document.getElementById('startButton');
@@ -110,11 +113,14 @@
 
         let scene, camera, renderer, session;
         let hotelModel;
-        let leftHand, rightHand;
-        let leftHandVisual, rightHandVisual;
-        let leftPointerLine, rightPointerLine;
+        let raycaster, mouse;
+        let handModelFactory, controllerModelFactory;
+        let hand1, hand2;
+        let controller1, controller2;
         let grabbedObject = null;
-        let initialGrabTransform = null;
+        let grabbing = { left: false, right: false };
+        let handJoints = { left: {}, right: {} };
+        let pinchStrength = { left: 0, right: 0 };
         let handDetectionTimer = 0;
 
         // Status updates
@@ -127,7 +133,7 @@
             handInfo.style.display = handCount > 0 ? 'block' : 'none';
         }
 
-        // Initialize Three.js scene
+        // Initialize Three.js scene with WebXR
         function initScene() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -138,135 +144,177 @@
                 antialias: true 
             });
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputEncoding = THREE.sRGBEncoding;
             renderer.xr.enabled = true;
 
-            // Lighting
+            // Enhanced lighting
             const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
             scene.add(ambientLight);
             
             const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
             directionalLight.position.set(2, 4, 2);
+            directionalLight.castShadow = true;
             scene.add(directionalLight);
 
+            // Initialize raycaster for interaction
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Initialize hand and controller factories
+            handModelFactory = new XRHandModelFactory();
+            controllerModelFactory = new XRControllerModelFactory();
+
             // Create hotel model
-            createHotelModel();
+            loadHotelModel();
             
-            // Create hand visuals
-            createHandVisuals();
-            
-            // Create pointer lines
-            createPointerLines();
+            // Setup WebXR hands and controllers
+            setupXRHands();
         }
 
-        // Create hotel model - positioned higher and more visible
-        function createHotelModel() {
+        // Load actual hotel GLB model
+        function loadHotelModel() {
+            const loader = new GLTFLoader();
+            
+            loader.load('model.glb', (gltf) => {
+                hotelModel = gltf.scene;
+                
+                // Scale and position the hotel
+                hotelModel.scale.setScalar(0.05);
+                hotelModel.position.set(0, 1.2, -1.5);
+                
+                // Enable shadows
+                hotelModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        child.userData = { grabbable: true };
+                    }
+                });
+                
+                scene.add(hotelModel);
+                updateStatus('🏨 Hotel Loaded', 'Ready to start hand tracking');
+                
+            }, (progress) => {
+                const percent = (progress.loaded / progress.total * 100).toFixed(0);
+                updateStatus('📦 Loading Hotel...', `${percent}% complete`);
+                
+            }, (error) => {
+                console.error('Error loading hotel model:', error);
+                updateStatus('❌ Model Load Failed', 'Using fallback hotel');
+                createFallbackHotel();
+            });
+        }
+
+        // Fallback hotel if GLB fails to load
+        function createFallbackHotel() {
             const hotelGroup = new THREE.Group();
 
-            // Main building - larger and more visible
-            const buildingGeometry = new THREE.BoxGeometry(0.8, 0.6, 0.6);
-            const buildingMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x8b4513,
-                shininess: 30
-            });
+            // Main building
+            const buildingGeometry = new THREE.BoxGeometry(0.6, 0.4, 0.4);
+            const buildingMaterial = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
             const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+            building.castShadow = true;
+            building.receiveShadow = true;
+            building.userData = { grabbable: true };
             hotelGroup.add(building);
 
             // Roof
-            const roofGeometry = new THREE.ConeGeometry(0.5, 0.3, 4);
+            const roofGeometry = new THREE.ConeGeometry(0.35, 0.2, 4);
             const roofMaterial = new THREE.MeshPhongMaterial({ color: 0x654321 });
             const roof = new THREE.Mesh(roofGeometry, roofMaterial);
-            roof.position.y = 0.45;
+            roof.position.y = 0.3;
             roof.rotation.y = Math.PI / 4;
+            roof.castShadow = true;
+            roof.userData = { grabbable: true };
             hotelGroup.add(roof);
 
-            // Windows - more visible
-            const windowGeometry = new THREE.PlaneGeometry(0.12, 0.12);
-            const windowMaterial = new THREE.MeshBasicMaterial({ color: 0x87ceeb });
-            
-            for (let i = 0; i < 4; i++) {
-                const window = new THREE.Mesh(windowGeometry, windowMaterial);
-                window.position.set(-0.24 + (i * 0.16), 0, 0.31);
-                hotelGroup.add(window);
-            }
-
-            // Door
-            const doorGeometry = new THREE.PlaneGeometry(0.2, 0.3);
-            const doorMaterial = new THREE.MeshPhongMaterial({ color: 0x654321 });
-            const door = new THREE.Mesh(doorGeometry, doorMaterial);
-            door.position.set(0, -0.15, 0.31);
-            hotelGroup.add(door);
-
-            // Position hotel at eye level and closer
             hotelModel = hotelGroup;
-            hotelModel.position.set(0, 1.6, -1.2); // Eye level, closer
+            hotelModel.position.set(0, 1.2, -1.5);
+            hotelModel.userData = { grabbable: true };
             scene.add(hotelModel);
         }
 
-        // Create large, visible hand representations
-        function createHandVisuals() {
-            // Left hand - large green sphere
-            const leftGeometry = new THREE.SphereGeometry(0.08, 16, 16);
-            const leftMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x00ff00,
-                emissive: 0x006600,
-                transparent: true,
-                opacity: 0.9
+        // Setup WebXR Hands and Controllers
+        function setupXRHands() {
+            // Hand 1 (left)
+            hand1 = renderer.xr.getHand(0);
+            hand1.addEventListener('connected', (event) => {
+                const handModel = handModelFactory.createHandModel(hand1, 'mesh');
+                handModel.material = new THREE.MeshPhongMaterial({ 
+                    color: 0x00ff00, 
+                    transparent: true, 
+                    opacity: 0.8 
+                });
+                hand1.add(handModel);
+                updateStatus('👐 Left Hand Connected', 'Wave your hands to activate tracking');
             });
-            leftHandVisual = new THREE.Mesh(leftGeometry, leftMaterial);
-            leftHandVisual.visible = false;
-            scene.add(leftHandVisual);
+            hand1.addEventListener('disconnected', () => {
+                grabbing.left = false;
+            });
+            scene.add(hand1);
 
-            // Right hand - large red sphere
-            const rightGeometry = new THREE.SphereGeometry(0.08, 16, 16);
-            const rightMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xff0000,
-                emissive: 0x660000,
-                transparent: true,
-                opacity: 0.9
+            // Hand 2 (right) 
+            hand2 = renderer.xr.getHand(1);
+            hand2.addEventListener('connected', (event) => {
+                const handModel = handModelFactory.createHandModel(hand2, 'mesh');
+                handModel.material = new THREE.MeshPhongMaterial({ 
+                    color: 0xff0000, 
+                    transparent: true, 
+                    opacity: 0.8 
+                });
+                hand2.add(handModel);
+                updateStatus('👐 Both Hands Connected', 'Pinch to grab hotel');
             });
-            rightHandVisual = new THREE.Mesh(rightGeometry, rightMaterial);
-            rightHandVisual.visible = false;
-            scene.add(rightHandVisual);
+            hand2.addEventListener('disconnected', () => {
+                grabbing.right = false;
+            });
+            scene.add(hand2);
+
+            // Controller 1 (fallback)
+            controller1 = renderer.xr.getController(0);
+            controller1.addEventListener('selectstart', () => onSelectStart(0));
+            controller1.addEventListener('selectend', () => onSelectEnd(0));
+            scene.add(controller1);
+
+            // Controller 2 (fallback)
+            controller2 = renderer.xr.getController(1);
+            controller2.addEventListener('selectstart', () => onSelectStart(1));
+            controller2.addEventListener('selectend', () => onSelectEnd(1));
+            scene.add(controller2);
         }
 
-        // Create pointer lines from hands to hotel
-        function createPointerLines() {
-            // Left hand pointer line
-            const leftLineGeometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(0, 0, 0)
-            ]);
-            const leftLineMaterial = new THREE.LineBasicMaterial({ 
-                color: 0x00ff00,
-                linewidth: 3,
-                transparent: true,
-                opacity: 0.6
-            });
-            leftPointerLine = new THREE.Line(leftLineGeometry, leftLineMaterial);
-            leftPointerLine.visible = false;
-            scene.add(leftPointerLine);
-
-            // Right hand pointer line
-            const rightLineGeometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(0, 0, 0)
-            ]);
-            const rightLineMaterial = new THREE.LineBasicMaterial({ 
-                color: 0xff0000,
-                linewidth: 3,
-                transparent: true,
-                opacity: 0.6
-            });
-            rightPointerLine = new THREE.Line(rightLineGeometry, rightLineMaterial);
-            rightPointerLine.visible = false;
-            scene.add(rightPointerLine);
+        // Controller interaction fallback
+        function onSelectStart(controllerIndex) {
+            const controller = controllerIndex === 0 ? controller1 : controller2;
+            const intersections = getIntersections(controller);
+            
+            if (intersections.length > 0) {
+                const intersection = intersections[0];
+                const object = intersection.object;
+                
+                if (object.userData.grabbable || object.parent.userData.grabbable) {
+                    grabbedObject = object.parent.userData.grabbable ? object.parent : object;
+                    updateStatus('🎯 Grabbed with Controller!', 'Release trigger to drop');
+                }
+            }
         }
 
-        // Update pointer line
-        function updatePointerLine(line, handPos, targetPos) {
-            const points = [handPos.clone(), targetPos.clone()];
-            line.geometry.setFromPoints(points);
-            line.visible = true;
+        function onSelectEnd(controllerIndex) {
+            if (grabbedObject) {
+                grabbedObject = null;
+                updateStatus('👐 Released!', 'Use hands or controllers to grab again');
+            }
+        }
+
+        // Raycasting for controller interactions
+        function getIntersections(controller) {
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            
+            return raycaster.intersectObjects([hotelModel], true);
         }
 
         // Start WebXR session with hand tracking
@@ -304,208 +352,153 @@
             }
         }
 
-        // Handle input sources (hands)
+        // Handle input sources (hands) - ENHANCED
         function onInputSourcesChange(event) {
-            let handDetected = false;
-            
-            for (const inputSource of session.inputSources) {
-                if (inputSource.hand) {
-                    handDetected = true;
-                    
-                    if (inputSource.handedness === 'left') {
-                        leftHand = inputSource;
-                    } else if (inputSource.handedness === 'right') {
-                        rightHand = inputSource;
-                    }
-                }
-            }
-
-            if (handDetected) {
-                updateStatus('👐 Hands Active!', 'Look for colored spheres with lines pointing to hotel');
-            }
+            updateStatus('🔄 Input Sources Changed', 'Detecting hands...');
         }
 
-        // Update hand tracking
+        // Advanced hand tracking with gesture detection
         function updateHandTracking(frame, referenceSpace) {
-            if (!frame) return;
+            if (!frame || !hotelModel) return;
 
-            let handsTracked = 0;
+            let handsActive = 0;
             let closestDistance = Infinity;
 
-            // Update left hand
-            if (leftHand && leftHand.hand) {
-                const distance = updateSingleHand(leftHand, leftHandVisual, leftPointerLine, frame, referenceSpace, 'left');
-                if (distance !== null) {
-                    handsTracked++;
-                    closestDistance = Math.min(closestDistance, distance);
-                }
-            } else {
-                leftHandVisual.visible = false;
-                leftPointerLine.visible = false;
-            }
-
-            // Update right hand
-            if (rightHand && rightHand.hand) {
-                const distance = updateSingleHand(rightHand, rightHandVisual, rightPointerLine, frame, referenceSpace, 'right');
-                if (distance !== null) {
-                    handsTracked++;
-                    closestDistance = Math.min(closestDistance, distance);
-                }
-            } else {
-                rightHandVisual.visible = false;
-                rightPointerLine.visible = false;
-            }
-
-            // Update info display
-            const distanceText = closestDistance === Infinity ? '--' : (closestDistance * 100).toFixed(0) + 'cm';
-            updateHandInfo(handsTracked, distanceText);
-
-            // Update detection timer
-            handDetectionTimer++;
-            if (handDetectionTimer === 300 && handsTracked === 0) { // 5 seconds at 60fps
-                updateStatus('🤲 Wave Your Hands', 'Make sure hands are visible to Quest cameras');
-            }
-        }
-
-        // Update single hand position and check interactions
-        function updateSingleHand(hand, visual, line, frame, referenceSpace, handedness) {
-            // Get index finger tip for pointing
-            if (hand.hand['index-finger-tip']) {
-                const indexPose = frame.getJointPose(hand.hand['index-finger-tip'], referenceSpace);
-                if (indexPose) {
-                    // Position hand visual at index finger tip
-                    visual.position.fromArray(indexPose.transform.position);
-                    visual.visible = true;
-
-                    // Make hand pulse to show it's active
-                    const time = Date.now() * 0.004;
-                    visual.scale.setScalar(1 + Math.sin(time + (handedness === 'left' ? 0 : Math.PI)) * 0.4);
-
-                    // Update pointer line to hotel
-                    updatePointerLine(line, visual.position, hotelModel.position);
-
-                    // Calculate distance to hotel
-                    const distanceToHotel = visual.position.distanceTo(hotelModel.position);
-
-                    // Check for pinch gesture
-                    if (hand.hand['thumb-tip']) {
-                        const thumbPose = frame.getJointPose(hand.hand['thumb-tip'], referenceSpace);
+            // Process both hands
+            [hand1, hand2].forEach((hand, index) => {
+                const handedness = index === 0 ? 'left' : 'right';
+                
+                if (hand.joints && Object.keys(hand.joints).length > 0) {
+                    handsActive++;
+                    
+                    // Get key joints
+                    const wrist = hand.joints['wrist'];
+                    const thumbTip = hand.joints['thumb-tip'];
+                    const indexTip = hand.joints['index-finger-tip'];
+                    const middleTip = hand.joints['middle-finger-tip'];
+                    
+                    if (wrist && thumbTip && indexTip) {
+                        // Calculate pinch strength
+                        const thumbPos = new THREE.Vector3();
+                        const indexPos = new THREE.Vector3();
                         
-                        if (thumbPose) {
-                            const thumbPos = new THREE.Vector3().fromArray(thumbPose.transform.position);
-                            const indexPos = visual.position.clone();
-                            const pinchDistance = thumbPos.distanceTo(indexPos);
-                            
-                            if (pinchDistance < 0.04) { // Pinched
-                                visual.material.emissive.setHex(handedness === 'left' ? 0x00aa00 : 0xaa0000);
-                                line.material.opacity = 1.0;
-                                checkGrabInteraction(visual.position, handedness, distanceToHotel);
-                            } else {
-                                visual.material.emissive.setHex(handedness === 'left' ? 0x006600 : 0x660000);
-                                line.material.opacity = 0.6;
+                        thumbPos.setFromMatrixPosition(thumbTip.matrixWorld);
+                        indexPos.setFromMatrixPosition(indexTip.matrixWorld);
+                        
+                        const pinchDistance = thumbPos.distanceTo(indexPos);
+                        const pinchThreshold = 0.04;
+                        const currentPinchStrength = Math.max(0, 1 - (pinchDistance / pinchThreshold));
+                        
+                        pinchStrength[handedness] = currentPinchStrength;
+                        
+                        // Calculate distance to hotel
+                        const distanceToHotel = indexPos.distanceTo(hotelModel.position);
+                        closestDistance = Math.min(closestDistance, distanceToHotel);
+                        
+                        // Handle grabbing
+                        handleGrabbing(handedness, indexPos, currentPinchStrength, distanceToHotel);
+                        
+                        // Visual feedback on hand
+                        if (hand.children.length > 0) {
+                            const handMesh = hand.children[0];
+                            if (handMesh.material) {
+                                // Change hand color based on pinch strength
+                                const baseColor = handedness === 'left' ? 0x00ff00 : 0xff0000;
+                                const intensity = currentPinchStrength;
+                                handMesh.material.emissive.setHex(intensity > 0.5 ? 0xffffff : baseColor);
+                                handMesh.material.opacity = 0.6 + (intensity * 0.4);
                             }
                         }
                     }
-
-                    return distanceToHotel;
                 }
-            }
+            });
+
+            // Update UI
+            const distanceText = closestDistance === Infinity ? '--' : (closestDistance * 100).toFixed(0) + 'cm';
+            updateHandInfo(handsActive, distanceText);
             
-            visual.visible = false;
-            line.visible = false;
-            return null;
+            // Update grabbed object position
+            updateGrabbedObject();
         }
 
-        // Check for grab interactions - SIMPLIFIED AND FIXED
-        function checkGrabInteraction(handPosition, handedness, distance) {
-            // Make grabbing much easier - larger grab distance
-            if (distance < 1.0 && !grabbedObject) {
+        // Handle grabbing logic
+        function handleGrabbing(handedness, handPos, pinchStrength, distance) {
+            const isStrongPinch = pinchStrength > 0.7;
+            const isCloseToHotel = distance < 0.8;
+            
+            if (isStrongPinch && isCloseToHotel && !grabbedObject && !grabbing[handedness]) {
                 // Start grabbing
                 grabbedObject = hotelModel;
-                initialGrabTransform = {
-                    position: hotelModel.position.clone(),
-                    handPosition: handPosition.clone()
+                grabbing[handedness] = {
+                    active: true,
+                    initialHandPos: handPos.clone(),
+                    initialObjectPos: hotelModel.position.clone(),
+                    offset: hotelModel.position.clone().sub(handPos)
                 };
                 
-                // Strong visual feedback
+                // Visual feedback
                 hotelModel.traverse((child) => {
                     if (child.material) {
-                        child.material.emissive.setHex(0x888888);
-                        child.material.color.multiplyScalar(1.5);
+                        child.material.emissive.setHex(0x444444);
                     }
                 });
                 
-                updateStatus('✅ GRABBED!', `Hotel is now following your ${handedness} hand`);
+                updateStatus('✅ GRABBED!', `${handedness} hand is controlling hotel`);
                 
-            } else if (!grabbedObject && distance < 1.0) {
-                // Show grab hint when close
-                updateStatus('👌 PINCH NOW!', `${handedness} hand is close - pinch to grab hotel`);
-            }
-            
-            // Update grabbed object position - MORE RESPONSIVE
-            if (grabbedObject && initialGrabTransform) {
-                // Direct follow - no offset calculation
-                grabbedObject.position.copy(handPosition);
-                grabbedObject.position.y += 0.3; // Slight offset so hand doesn't block view
-            }
-        }
-
-        // Add release detection in main update loop
-        function checkForRelease() {
-            if (grabbedObject) {
-                let stillPinching = false;
+            } else if (grabbedObject && grabbing[handedness] && pinchStrength < 0.3) {
+                // Release grab
+                grabbing[handedness] = false;
                 
-                // Check if any hand is still pinching
-                [leftHand, rightHand].forEach(hand => {
-                    if (hand && hand.hand && hand.hand['thumb-tip'] && hand.hand['index-finger-tip']) {
-                        const frame = renderer.xr.getFrame();
-                        const referenceSpace = renderer.xr.getReferenceSpace();
-                        
-                        if (frame) {
-                            const thumbPose = frame.getJointPose(hand.hand['thumb-tip'], referenceSpace);
-                            const indexPose = frame.getJointPose(hand.hand['index-finger-tip'], referenceSpace);
-                            
-                            if (thumbPose && indexPose) {
-                                const thumbPos = new THREE.Vector3().fromArray(thumbPose.transform.position);
-                                const indexPos = new THREE.Vector3().fromArray(indexPose.transform.position);
-                                const pinchDistance = thumbPos.distanceTo(indexPos);
-                                
-                                if (pinchDistance < 0.05) {
-                                    stillPinching = true;
-                                }
-                            }
-                        }
-                    }
-                });
+                // Check if any hand is still grabbing
+                const stillGrabbing = Object.values(grabbing).some(g => g.active);
                 
-                // Release if no pinching detected
-                if (!stillPinching) {
+                if (!stillGrabbing) {
                     // Reset hotel appearance
-                    grabbedObject.traverse((child) => {
+                    hotelModel.traverse((child) => {
                         if (child.material) {
                             child.material.emissive.setHex(0x000000);
-                            child.material.color.setHex(child.material.color.getHex() / 1.5);
                         }
                     });
                     
                     grabbedObject = null;
-                    initialGrabTransform = null;
                     updateStatus('👐 Released!', 'Pinch near hotel to grab again');
                 }
             }
         }
 
-        // Render loop
+        // Update grabbed object position
+        function updateGrabbedObject() {
+            if (!grabbedObject) return;
+            
+            // Find the hand that's actively grabbing
+            const activeGrab = Object.entries(grabbing).find(([hand, grab]) => grab && grab.active);
+            
+            if (activeGrab) {
+                const [handedness, grab] = activeGrab;
+                const hand = handedness === 'left' ? hand1 : hand2;
+                
+                if (hand.joints && hand.joints['index-finger-tip']) {
+                    const indexTip = hand.joints['index-finger-tip'];
+                    const currentHandPos = new THREE.Vector3();
+                    currentHandPos.setFromMatrixPosition(indexTip.matrixWorld);
+                    
+                    // Update object position with offset
+                    grabbedObject.position.copy(currentHandPos).add(grab.offset);
+                }
+            }
+        }
+
+
+        // Enhanced render loop
         function render(timestamp, frame) {
             if (frame) {
                 const referenceSpace = renderer.xr.getReferenceSpace();
                 updateHandTracking(frame, referenceSpace);
-                checkForRelease(); // Check for release every frame
             }
 
             // Animate hotel rotation when not grabbed
-            if (!grabbedObject) {
-                hotelModel.rotation.y += 0.008;
+            if (hotelModel && !grabbedObject) {
+                hotelModel.rotation.y += 0.005;
             }
 
             renderer.render(scene, camera);
