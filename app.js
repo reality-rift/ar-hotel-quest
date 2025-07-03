@@ -257,9 +257,12 @@ function updateHandInteraction(hand) {
                 // Move the model
                 hotelModel.position.add(delta);
                 
-                // Rotate based on horizontal movement
+                // Rotate around model's center based on horizontal movement
                 const rotationSpeed = 2;
-                hotelModel.rotation.y += delta.x * rotationSpeed;
+                const rotationDelta = delta.x * rotationSpeed;
+                
+                // Simply rotate around the model's local Y axis (center rotation)
+                hotelModel.rotateY(rotationDelta);
                 
                 activeHand.userData.previousPinchPosition = pinchPos.clone();
             }
