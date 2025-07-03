@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quest Compatible AR Hotel</title>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        model-viewer {
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+
+        .ar-button {
+            background: linear-gradient(45deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 20px 40px;
+            font-size: 20px;
+            font-weight: 600;
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(30, 60, 114, 0.4);
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            z-index: 1000;
+        }
+
+        .ar-button:hover {
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 12px 35px rgba(30, 60, 114, 0.6);
+        }
+
+        .quest-info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 16px;
+            max-width: 90%;
+            backdrop-filter: blur(10px);
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+        }
+
+        .fullscreen-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        @media (max-width: 768px) {
+            .quest-info {
+                width: 90%;
+                font-size: 14px;
+                padding: 12px 20px;
+            }
+            
+            .ar-button {
+                font-size: 18px;
+                padding: 16px 32px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="quest-info">
+        <strong>🥽 Quest 3 Compatible</strong><br>
+        <span id="deviceInfo">Optimized for Quest Browser</span>
+    </div>
+
+    <button class="fullscreen-btn" onclick="enterFullscreen()">
+        🔍 Fullscreen
+    </button>
+
+    <model-viewer
+        id="questModel"
+        src="model.glb"
+        camera-controls
+        shadow-intensity="1"
+        exposure="1"
+        camera-orbit="0deg 75deg 20m"
+        scale="0.05 0.05 0.05"
+        interaction-prompt="auto"
+        auto-rotate
+        auto-rotate-delay="3000"
+        loading="eager"
+        reveal="auto"
+        alt="Hotel 3D Model"
+        touch-action="none">
+        
+        <button slot="ar-button" class="ar-button" id="arBtn">
+            🏨 Try AR Mode
+        </button>
+    </model-viewer>
+
+    <div class="controls">
+        <strong>Quest 3 Controls:</strong><br>
+        🖱️ <strong>Touch & Drag:</strong> Rotate hotel<br>
+        🤏 <strong>Pinch:</strong> Zoom in/out<br>
+        👆 <strong>Double tap:</strong> Reset view<br>
+        📱 <strong>Fullscreen:</strong> Better immersion
+    </div>
+
+    <script>
+        const modelViewer = document.querySelector('#questModel');
+        const deviceInfo = document.querySelector('#deviceInfo');
+        const arBtn = document.querySelector('#arBtn');
+        
+        // Detect device and browser
+        const isQuest = /OculusBrowser/.test(navigator.userAgent);
+        const isMobile = /Android|iPhone|iPad/.test(navigator.userAgent);
+        
+        if (isQuest) {
+            deviceInfo.textContent = '🎯 Quest 3 Detected! Touch optimized';
+            modelViewer.setAttribute('scale', '0.03 0.03 0.03');
+            modelViewer.setAttribute('camera-orbit', '0deg 60deg 15m');
+        } else if (isMobile) {
+            deviceInfo.textContent = '📱 Mobile optimized';
+        } else {
+            deviceInfo.textContent = '💻 Desktop mode';
+        }
+
+        // Fullscreen function
+        function enterFullscreen() {
+            const element = document.documentElement;
+            
+            if (element.requestFullscreen) {
+                element.requestFullscreen().catch(err => {
+                    console.log('Fullscreen error:', err);
+                    alert('Fullscreen not available. Use Quest browser in immersive mode.');
+                });
+            } else if (element.webkitRequestFullscreen) {
+                element.webkitRequestFullscreen();
+            } else if (element.mozRequestFullScreen) {
+                element.mozRequestFullScreen();
+            } else if (element.msRequestFullscreen) {
+                element.msRequestFullscreen();
+            } else {
+                // Fallback: simulate fullscreen
+                document.body.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    z-index: 9999;
+                    background: #000;
+                `;
+                alert('Simulating fullscreen mode');
+            }
+        }
+
+        // Enhanced touch controls for Quest
+        let isRotating = false;
+        let startX, startY;
+
+        modelViewer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isRotating = true;
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+            }
+        });
+
+        modelViewer.addEventListener('touchmove', (e) => {
+            if (isRotating && e.touches.length === 1) {
+                const deltaX = e.touches[0].clientX - startX;
+                const deltaY = e.touches[0].clientY - startY;
+                
+                // Enhance rotation sensitivity for Quest
+                if (isQuest) {
+                    const sensitivity = 2;
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                }
+            }
+        });
+
+        modelViewer.addEventListener('touchend', () => {
+            isRotating = false;
+        });
+
+        // Double tap to reset
+        let tapCount = 0;
+        modelViewer.addEventListener('touchend', (e) => {
+            tapCount++;
+            if (tapCount === 1) {
+                setTimeout(() => {
+                    if (tapCount === 2) {
+                        // Reset camera
+                        modelViewer.cameraTarget = '0m 0m 0m';
+                        modelViewer.cameraOrbit = '0deg 75deg 20m';
+                    }
+                    tapCount = 0;
+                }, 300);
+            }
+        });
+
+        // Handle AR button
+        arBtn.addEventListener('click', () => {
+            // Since WebXR isn't available, create immersive fullscreen experience
+            enterFullscreen();
+            
+            // Hide UI elements
+            document.querySelector('.quest-info').style.display = 'none';
+            document.querySelector('.controls').style.display = 'none';
+            document.querySelector('.fullscreen-btn').style.display = 'none';
+            
+            // Make model larger and centered
+            modelViewer.setAttribute('scale', '0.1 0.1 0.1');
+            modelViewer.setAttribute('camera-orbit', '0deg 60deg 8m');
+            
+            // Change background to black for immersion
+            document.body.style.background = '#000';
+            
+            // Show exit button
+            const exitBtn = document.createElement('button');
+            exitBtn.textContent = '❌ Exit AR';
+            exitBtn.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(255, 0, 0, 0.8);
+                color: white;
+                border: none;
+                padding: 15px 25px;
+                border-radius: 10px;
+                cursor: pointer;
+                z-index: 1000;
+                font-size: 16px;
+            `;
+            
+            exitBtn.onclick = () => {
+                document.exitFullscreen();
+                location.reload();
+            };
+            
+            document.body.appendChild(exitBtn);
+        });
+
+        // Handle model loading
+        modelViewer.addEventListener('load', () => {
+            console.log('Hotel model loaded successfully');
+            
+            if (isQuest) {
+                // Quest-specific optimizations
+                modelViewer.setAttribute('auto-rotate-delay', '5000');
+            }
+        });
+    </script>
+</body>
+</html>

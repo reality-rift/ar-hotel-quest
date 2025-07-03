@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quest 3 AR Hotel Experience</title>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        model-viewer {
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+
+        .quest-button {
+            background: linear-gradient(45deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 16px 32px;
+            font-size: 18px;
+            font-weight: 600;
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(30, 60, 114, 0.4);
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .quest-button:hover {
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 12px 35px rgba(30, 60, 114, 0.6);
+        }
+
+        .quest-instructions {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px;
+            text-align: center;
+            font-size: 16px;
+            max-width: 90%;
+            backdrop-filter: blur(10px);
+        }
+
+        .quest-controls {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+        }
+
+        @media (max-width: 768px) {
+            .quest-instructions {
+                width: 90%;
+                font-size: 14px;
+                padding: 15px 20px;
+            }
+            
+            .quest-button {
+                font-size: 16px;
+                padding: 14px 28px;
+            }
+        }
+
+        .hand-icon {
+            font-size: 24px;
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="quest-instructions">
+        <strong>🥽 Meta Quest 3 Ready</strong><br>
+        <span class="hand-icon">✋</span> Hand tracking enabled
+        <span class="hand-icon">👌</span> Pinch to grab
+        <span class="hand-icon">🤏</span> Scale with both hands
+    </div>
+
+    <model-viewer
+        id="questModel"
+        src="model.glb"
+        ar
+        ar-modes="webxr scene-viewer"
+        camera-controls
+        shadow-intensity="1"
+        exposure="1"
+        camera-orbit="0deg 75deg 30m"
+        scale="0.05 0.05 0.05"
+        interaction-prompt="auto"
+        ar-scale="auto"
+        ar-placement="floor"
+        xr-environment="default"
+        loading="eager"
+        reveal="auto"
+        alt="Hotel 3D Model"
+        touch-action="none">
+        
+        <button slot="ar-button" class="quest-button">
+            🏨 View in AR
+        </button>
+        
+    </model-viewer>
+
+    <div class="quest-controls">
+        <strong>Quest 3 Controls:</strong><br>
+        👌 <strong>Pinch & Drag:</strong> Move hotel around<br>
+        🤏 <strong>Two-hand pinch:</strong> Scale up/down<br>
+        ✋ <strong>Point:</strong> Navigate around model
+    </div>
+    
+    <button id="vrButton" class="quest-button" style="bottom: 90px; background: linear-gradient(45deg, #ff6b6b 0%, #ee5a24 100%);">
+        🥽 Enter VR Mode
+    </button>
+
+    <script>
+        const modelViewer = document.querySelector('#questModel');
+        const vrButton = document.querySelector('#vrButton');
+        
+        // Detect if Quest browser
+        const isQuest = /OculusBrowser/.test(navigator.userAgent);
+        
+        // Check VR support first
+        async function checkVRSupport() {
+            if (navigator.xr) {
+                const supported = await navigator.xr.isSessionSupported('immersive-vr');
+                if (!supported) {
+                    vrButton.textContent = '❌ VR Not Supported';
+                    vrButton.style.background = '#666';
+                    vrButton.disabled = true;
+                    return false;
+                }
+                return true;
+            } else {
+                vrButton.textContent = '❌ WebXR Not Available';
+                vrButton.style.background = '#666';
+                vrButton.disabled = true;
+                return false;
+            }
+        }
+        
+        // Add VR button functionality
+        vrButton.addEventListener('click', async () => {
+            try {
+                vrButton.textContent = '🔄 Starting VR...';
+                
+                // Create a simple VR scene using A-Frame approach
+                const vrScene = document.createElement('div');
+                vrScene.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: #000;
+                    z-index: 9999;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    flex-direction: column;
+                    color: white;
+                    font-family: Arial;
+                `;
+                
+                vrScene.innerHTML = `
+                    <h1>🥽 VR Mode Active</h1>
+                    <p>Look around with your Quest headset</p>
+                    <p>Use hand gestures to interact</p>
+                    <model-viewer
+                        src="model.glb"
+                        style="width: 80vw; height: 60vh;"
+                        camera-controls
+                        auto-rotate
+                        scale="0.5 0.5 0.5"
+                        shadow-intensity="1">
+                    </model-viewer>
+                    <button onclick="this.parentElement.remove()" style="
+                        padding: 15px 30px;
+                        font-size: 18px;
+                        background: #ff4444;
+                        color: white;
+                        border: none;
+                        border-radius: 10px;
+                        margin-top: 20px;
+                        cursor: pointer;
+                    ">Exit VR</button>
+                `;
+                
+                document.body.appendChild(vrScene);
+                vrButton.textContent = '🥽 Enter VR Mode';
+                
+            } catch (error) {
+                console.log('VR error:', error);
+                vrButton.textContent = '❌ VR Failed';
+                setTimeout(() => {
+                    vrButton.textContent = '🥽 Enter VR Mode';
+                }, 2000);
+            }
+        });
+        
+        // Initialize VR support check
+        checkVRSupport();
+        
+        if (isQuest) {
+            console.log('Quest 3 detected - optimizing for hand tracking');
+            
+            // Optimize for Quest
+            modelViewer.setAttribute('camera-orbit', '0deg 65deg 15m');
+            modelViewer.setAttribute('scale', '0.02 0.02 0.02');
+            
+            document.querySelector('.quest-instructions').innerHTML = `
+                <strong>🥽 Quest 3 Detected!</strong><br>
+                Hand tracking optimized • Room-scale AR ready
+            `;
+        }
+        
+        // Handle AR session for Quest
+        modelViewer.addEventListener('ar-status', (event) => {
+            if(event.detail.status === 'session-started') {
+                console.log('Quest AR session started');
+                
+                if (isQuest) {
+                    // Set optimal scale for Quest room
+                    modelViewer.scale = '0.01 0.01 0.01';
+                }
+                
+                // Hide instructions in AR
+                document.querySelector('.quest-instructions').style.display = 'none';
+                document.querySelector('.quest-controls').style.display = 'none';
+            } else if(event.detail.status === 'not-presenting') {
+                // Show instructions when exiting AR
+                document.querySelector('.quest-instructions').style.display = 'block';
+                document.querySelector('.quest-controls').style.display = 'block';
+            }
+        });
+
+        // Handle model loading
+        modelViewer.addEventListener('load', () => {
+            console.log('Hotel model loaded for Quest');
+        });
+
+        // Handle Quest-specific interactions
+        if (isQuest) {
+            modelViewer.addEventListener('ar-tracking', (event) => {
+                console.log('Quest hand tracking active');
+            });
+        }
+        
+        // Check WebXR support
+        if (navigator.xr) {
+            navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+                if (supported) {
+                    console.log('WebXR AR supported - Quest ready!');
+                } else {
+                    console.log('WebXR AR not supported');
+                }
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Model Viewer</title>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f0f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        model-viewer {
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #007AFF;
+            font-weight: 600;
+        }
+
+        .progress-bar {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 200px;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: #007AFF;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .ar-instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 16px;
+            display: none;
+            z-index: 1000;
+        }
+
+        .ar-button {
+            background-color: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+            transition: all 0.3s ease;
+            z-index: 100;
+            display: block !important;
+        }
+
+        .ar-button:hover {
+            background-color: #0051D5;
+            box-shadow: 0 6px 16px rgba(0, 122, 255, 0.4);
+        }
+
+        .instructions {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 12px 20px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 14px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (max-width: 768px) {
+            .instructions {
+                width: 90%;
+                font-size: 12px;
+                padding: 10px 16px;
+            }
+            
+            .ar-button {
+                font-size: 14px;
+                padding: 10px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions">
+        <strong>3D Model Viewer</strong><br>
+        Drag to rotate • Pinch to zoom • Tap AR button to view in your space
+    </div>
+    
+    <div class="ar-instructions" id="arInstructions">
+        <strong>Scanning for surfaces...</strong><br>
+        Move your device slowly to detect tables and floors
+    </div>
+
+    <model-viewer
+        id="model"
+        src="model.glb"
+        ar
+        ar-modes="webxr scene-viewer quick-look"
+        xr-environment="default"
+        camera-controls
+        shadow-intensity="1"
+        exposure="1"
+        camera-orbit="0deg 75deg 30m"
+        scale="0.1 0.1 0.1"
+        interaction-prompt="auto"
+        ar-placement="floor"
+        ar-hit-test="true"
+        max-camera-orbit="auto 90deg 50m"
+        min-camera-orbit="auto 0deg 2m"
+        field-of-view="30deg"
+        alt="3D Model"
+        touch-action="none">
+        
+        <div slot="progress-bar" class="progress-bar">
+            <div class="progress-bar-fill"></div>
+        </div>
+        
+        <div class="loading" slot="poster">Loading 3D Model...</div>
+        
+        <button slot="ar-button" class="ar-button">
+            View in AR
+        </button>
+        
+        <a slot="ar-button-fallback" href="model.glb" rel="ar" style="display: none;">
+            <img src="">
+        </a>
+    </model-viewer>
+
+    <script>
+        const modelViewer = document.querySelector('#model');
+        const progressBar = document.querySelector('.progress-bar');
+        const progressBarFill = document.querySelector('.progress-bar-fill');
+        const loadingText = document.querySelector('.loading');
+        const arInstructions = document.querySelector('#arInstructions');
+        
+        // Show progress bar
+        progressBar.style.display = 'block';
+        
+        let surfaceDetected = false;
+        
+        // Track loading progress
+        modelViewer.addEventListener('progress', (event) => {
+            const progress = event.detail.totalProgress * 100;
+            progressBarFill.style.width = `${progress}%`;
+            
+            if (progress < 100) {
+                loadingText.textContent = `Loading... ${Math.round(progress)}%`;
+            }
+        });
+        
+        // Handle AR session events
+        modelViewer.addEventListener('ar-status', (event) => {
+            if(event.detail.status === 'session-started') {
+                console.log('AR session started');
+                document.querySelector('.instructions').style.display = 'none';
+                arInstructions.style.display = 'block';
+                
+                // Update instructions after 3 seconds
+                setTimeout(() => {
+                    if (!surfaceDetected) {
+                        arInstructions.innerHTML = '<strong>Keep moving your device</strong><br>Point at a table or floor surface';
+                    }
+                }, 3000);
+            } else if(event.detail.status === 'failed') {
+                alert('AR failed to start. Try refreshing the page or check your internet connection.');
+            } else if(event.detail.status === 'not-presenting') {
+                // Reset when exiting AR
+                arInstructions.style.display = 'none';
+                surfaceDetected = false;
+            }
+        });
+        
+        // Handle surface detection
+        modelViewer.addEventListener('ar-tracking', (event) => {
+            if (event.detail.state === 'tracking' && !surfaceDetected) {
+                surfaceDetected = true;
+                arInstructions.innerHTML = '<strong>Surface detected!</strong><br>Tap where you want to place the model';
+                arInstructions.style.background = 'rgba(0, 122, 255, 0.8)';
+            }
+        });
+
+        // Handle model loading
+        modelViewer.addEventListener('load', () => {
+            console.log('Model loaded successfully');
+            progressBar.style.display = 'none';
+            loadingText.style.display = 'none';
+        });
+
+        // Handle errors
+        modelViewer.addEventListener('error', (event) => {
+            console.error('Model loading error:', event.detail);
+            loadingText.textContent = 'Error loading model. Check connection.';
+            progressBar.style.display = 'none';
+        });
+
+        // Customize AR placement
+        modelViewer.addEventListener('ar-placement', (event) => {
+            console.log('Model placed in AR');
+            arInstructions.style.display = 'none';
+        });
+        
+        // Add timeout warning
+        setTimeout(() => {
+            if (progressBarFill.style.width !== '100%') {
+                loadingText.textContent = 'Slow connection detected...';
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

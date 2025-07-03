@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebXR Hands API - Quest 3</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .ui-overlay {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 100;
+            max-width: 300px;
+        }
+
+        .start-button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 20px 40px;
+            background: #00d4aa;
+            color: white;
+            border: none;
+            border-radius: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 100;
+        }
+
+        .debug {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 11px;
+            max-width: 250px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="ui-overlay">
+        <h3>🤲 WebXR Hands API</h3>
+        <p><strong>Quest 3 Hand Tracking:</strong></p>
+        <p>✋ Point at objects</p>
+        <p>👌 Pinch to grab</p>
+        <p>🤏 Scale with both hands</p>
+        <p>🔄 Natural hand gestures</p>
+    </div>
+
+    <div class="debug" id="debug">
+        Debug Info:<br>
+        <span id="debugText">Checking WebXR...</span>
+    </div>
+
+    <button class="start-button" id="startButton">
+        🏨 Start WebXR Hands
+    </button>
+
+    <canvas id="webxr-canvas"></canvas>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.157.0/build/three.module.js';
+
+        const canvas = document.getElementById('webxr-canvas');
+        const debugText = document.getElementById('debugText');
+        const startButton = document.getElementById('startButton');
+
+        let scene, camera, renderer, session;
+        let hotelModel;
+        let leftHand, rightHand;
+        let handJoints = { left: [], right: [] };
+        let grabbedObject = null;
+        let initialGrabTransform = null;
+
+        // Debug logging
+        function log(message) {
+            console.log(message);
+            debugText.innerHTML += '<br>' + message;
+            debugText.scrollTop = debugText.scrollHeight;
+        }
+
+        // Initialize Three.js scene
+        function initScene() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            // Simple hotel model (cube for now - you can load GLB later)
+            const geometry = new THREE.BoxGeometry(0.5, 0.3, 0.4);
+            const material = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
+            hotelModel = new THREE.Mesh(geometry, material);
+            hotelModel.position.set(0, 1.5, -2);
+            scene.add(hotelModel);
+
+            // Add roof
+            const roofGeometry = new THREE.ConeGeometry(0.35, 0.2, 4);
+            const roofMaterial = new THREE.MeshPhongMaterial({ color: 0x654321 });
+            const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+            roof.position.set(0, 0.25, 0);
+            roof.rotation.y = Math.PI / 4;
+            hotelModel.add(roof);
+
+            log('Scene initialized');
+        }
+
+        // Initialize hand tracking
+        function initHandTracking() {
+            // Create hand joint spheres
+            const jointGeometry = new THREE.SphereGeometry(0.01, 8, 8);
+            const leftJointMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const rightJointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+            // Create joints for each hand (simplified - just key joints)
+            const keyJoints = ['wrist', 'index-finger-tip', 'thumb-tip'];
+            
+            for (let i = 0; i < keyJoints.length; i++) {
+                // Left hand joints
+                const leftJoint = new THREE.Mesh(jointGeometry, leftJointMaterial);
+                leftJoint.visible = false;
+                scene.add(leftJoint);
+                handJoints.left.push(leftJoint);
+
+                // Right hand joints
+                const rightJoint = new THREE.Mesh(jointGeometry, rightJointMaterial);
+                rightJoint.visible = false;
+                scene.add(rightJoint);
+                handJoints.right.push(rightJoint);
+            }
+
+            log('Hand tracking initialized');
+        }
+
+        // Start WebXR session with hand tracking
+        async function startWebXR() {
+            try {
+                log('Requesting WebXR session...');
+                
+                session = await navigator.xr.requestSession('immersive-ar', {
+                    requiredFeatures: ['local-floor'],
+                    optionalFeatures: ['hand-tracking']
+                });
+
+                log('WebXR session started');
+
+                // Set up session
+                await renderer.xr.setSession(session);
+                
+                // Hide UI
+                document.querySelector('.ui-overlay').style.display = 'none';
+                startButton.style.display = 'none';
+
+                // Start render loop
+                renderer.setAnimationLoop(render);
+
+                // Session event handlers
+                session.addEventListener('inputsourceschange', onInputSourcesChange);
+                session.addEventListener('end', onSessionEnd);
+
+                log('Hand tracking session active');
+
+            } catch (error) {
+                log('WebXR failed: ' + error.message);
+                alert('WebXR not available. Make sure you\'re using Quest browser with hand tracking enabled.');
+            }
+        }
+
+        // Handle input sources (hands)
+        function onInputSourcesChange(event) {
+            log('Input sources changed');
+            
+            for (const inputSource of session.inputSources) {
+                if (inputSource.hand) {
+                    log(`Hand detected: ${inputSource.handedness}`);
+                    
+                    if (inputSource.handedness === 'left') {
+                        leftHand = inputSource;
+                    } else if (inputSource.handedness === 'right') {
+                        rightHand = inputSource;
+                    }
+                }
+            }
+        }
+
+        // Update hand joint positions
+        function updateHandTracking(frame, referenceSpace) {
+            if (!frame) return;
+
+            // Update left hand
+            if (leftHand && leftHand.hand) {
+                updateHandJoints(leftHand, handJoints.left, frame, referenceSpace, 'left');
+            }
+
+            // Update right hand
+            if (rightHand && rightHand.hand) {
+                updateHandJoints(rightHand, handJoints.right, frame, referenceSpace, 'right');
+            }
+        }
+
+        // Update individual hand joints
+        function updateHandJoints(hand, joints, frame, referenceSpace, handedness) {
+            const jointNames = ['wrist', 'index-finger-tip', 'thumb-tip'];
+            
+            for (let i = 0; i < jointNames.length && i < joints.length; i++) {
+                const jointName = jointNames[i];
+                const joint = joints[i];
+                
+                if (hand.hand[jointName]) {
+                    const jointPose = frame.getJointPose(hand.hand[jointName], referenceSpace);
+                    
+                    if (jointPose) {
+                        joint.position.fromArray(jointPose.transform.position);
+                        joint.quaternion.fromArray(jointPose.transform.orientation);
+                        joint.visible = true;
+
+                        // Check for pinch gesture (thumb tip close to index tip)
+                        if (i === 1 && joints[2]) { // index tip
+                            const thumbTip = joints[2];
+                            const distance = joint.position.distanceTo(thumbTip.position);
+                            
+                            if (distance < 0.03) { // Pinched
+                                checkGrabInteraction(joint.position, handedness);
+                            }
+                        }
+                    } else {
+                        joint.visible = false;
+                    }
+                } else {
+                    joint.visible = false;
+                }
+            }
+        }
+
+        // Check for grab interactions
+        function checkGrabInteraction(handPosition, handedness) {
+            const distanceToHotel = handPosition.distanceTo(hotelModel.position);
+            
+            if (distanceToHotel < 0.5 && !grabbedObject) {
+                // Start grabbing
+                grabbedObject = hotelModel;
+                initialGrabTransform = {
+                    position: hotelModel.position.clone(),
+                    handPosition: handPosition.clone()
+                };
+                
+                // Visual feedback
+                hotelModel.material.emissive.setHex(0x222222);
+                log(`Hotel grabbed with ${handedness} hand`);
+                
+            } else if (grabbedObject && distanceToHotel > 0.8) {
+                // Release grab
+                grabbedObject.material.emissive.setHex(0x000000);
+                grabbedObject = null;
+                initialGrabTransform = null;
+                log(`Hotel released`);
+            }
+            
+            // Update grabbed object position
+            if (grabbedObject && initialGrabTransform) {
+                const offset = handPosition.clone().sub(initialGrabTransform.handPosition);
+                grabbedObject.position.copy(initialGrabTransform.position).add(offset);
+            }
+        }
+
+        // Render loop
+        function render(timestamp, frame) {
+            if (frame) {
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                updateHandTracking(frame, referenceSpace);
+            }
+
+            // Animate hotel rotation when not grabbed
+            if (!grabbedObject) {
+                hotelModel.rotation.y += 0.005;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Session end handler
+        function onSessionEnd() {
+            log('WebXR session ended');
+            
+            // Show UI again
+            document.querySelector('.ui-overlay').style.display = 'block';
+            startButton.style.display = 'block';
+            
+            // Reset
+            session = null;
+            leftHand = null;
+            rightHand = null;
+            grabbedObject = null;
+            
+            // Hide hand joints
+            handJoints.left.forEach(joint => joint.visible = false);
+            handJoints.right.forEach(joint => joint.visible = false);
+        }
+
+        // Initialize everything
+        function init() {
+            log('Initializing WebXR Hands...');
+            
+            if (!navigator.xr) {
+                log('WebXR not supported');
+                return;
+            }
+
+            initScene();
+            initHandTracking();
+            
+            startButton.addEventListener('click', startWebXR);
+            
+            log('Ready to start WebXR Hands');
+        }
+
+        // Start initialization
+        init();
+    </script>
+</body>
+</html>

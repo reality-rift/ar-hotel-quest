@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>VR Hotel Experience - Quest 3</title>
+    <meta name="description" content="Virtual Reality Hotel Tour">
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+        }
+        
+        .info-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: Arial;
+            z-index: 100;
+            max-width: 300px;
+        }
+        
+        .vr-button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            background: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="info-panel">
+        <h3>🏨 VR Hotel Experience</h3>
+        <p><strong>Quest 3 Controls:</strong></p>
+        <p>👀 Look around to explore</p>
+        <p>👐 Use hand tracking to grab</p>
+        <p>🚶‍♂️ Walk around the hotel</p>
+        <p>👌 Pinch to teleport</p>
+    </div>
+
+    <a-scene 
+        vr-mode-ui="enabled: true" 
+        embedded
+        style="height: 100vh; width: 100vw;"
+        background="color: #87CEEB"
+        hand-tracking
+        webxr="requiredFeatures: hand-tracking">
+        
+        <!-- Assets -->
+        <a-assets>
+            <a-asset-item id="hotelModel" src="model.glb"></a-asset-item>
+        </a-assets>
+
+        <!-- Environment -->
+        <a-sky color="#87CEEB"></a-sky>
+        <a-plane 
+            position="0 0 0" 
+            rotation="-90 0 0" 
+            width="50" 
+            height="50" 
+            color="#228B22" 
+            shadow="receive: true">
+        </a-plane>
+
+        <!-- Lighting -->
+        <a-light type="ambient" color="#404040" intensity="0.4"></a-light>
+        <a-light 
+            type="directional" 
+            position="10 10 5" 
+            color="#ffffff" 
+            intensity="0.8"
+            shadow="cast: true">
+        </a-light>
+
+        <!-- Hotel Model -->
+        <a-entity 
+            id="hotel"
+            gltf-model="#hotelModel"
+            position="0 1 -5"
+            scale="0.1 0.1 0.1"
+            shadow="cast: true"
+            animation__rotate="property: rotation; to: 0 360 0; loop: true; dur: 30000">
+        </a-entity>
+
+        <!-- Interactive Elements -->
+        <a-text 
+            position="0 3 -3" 
+            value="🏨 Welcome to VR Hotel" 
+            align="center" 
+            color="#000080"
+            scale="2 2 2">
+        </a-text>
+
+        <!-- Teleportation Points -->
+        <a-cylinder 
+            position="3 0.1 -3" 
+            radius="0.5" 
+            height="0.2" 
+            color="#FF6B6B"
+            teleport-target>
+        </a-cylinder>
+        
+        <a-cylinder 
+            position="-3 0.1 -3" 
+            radius="0.5" 
+            height="0.2" 
+            color="#4ECDC4"
+            teleport-target>
+        </a-cylinder>
+
+        <a-cylinder 
+            position="0 0.1 -8" 
+            radius="0.5" 
+            height="0.2" 
+            color="#45B7D1"
+            teleport-target>
+        </a-cylinder>
+
+        <!-- Quest Hand Tracking -->
+        <a-entity 
+            id="leftHand" 
+            hand-tracking-controls="hand: left"
+            sphere-collider="objects: [teleport-target]">
+        </a-entity>
+        
+        <a-entity 
+            id="rightHand" 
+            hand-tracking-controls="hand: right"
+            sphere-collider="objects: [teleport-target]">
+        </a-entity>
+
+        <!-- Camera with movement -->
+        <a-entity 
+            id="rig" 
+            movement-controls="constrainToNavMesh: false"
+            position="0 1.6 0">
+            
+            <a-camera 
+                id="camera"
+                wasd-controls-enabled="true"
+                look-controls="pointerLockEnabled: true">
+                
+                <!-- Hand tracking cursors -->
+                <a-cursor
+                    position="0 0 -1"
+                    geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
+                    material="color: white; shader: flat"
+                    animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 1 1 1; dur: 150"
+                    animation__fusing="property: scale; startEvents: fusing; from: 1 1 1; to: 0.1 0.1 0.1; dur: 1500">
+                </a-cursor>
+            </a-camera>
+        </a-entity>
+    </a-scene>
+
+    <script>
+        // Register teleport component
+        AFRAME.registerComponent('teleport-target', {
+            init: function () {
+                this.el.addEventListener('click', () => {
+                    const rig = document.querySelector('#rig');
+                    const targetPos = this.el.getAttribute('position');
+                    rig.setAttribute('position', `${targetPos.x} 1.6 ${targetPos.z}`);
+                    
+                    // Visual feedback
+                    this.el.setAttribute('animation', 'property: scale; to: 1.2 1.2 1.2; dur: 200; direction: alternate');
+                });
+            }
+        });
+
+        // Scale hotel based on hand gestures
+        document.addEventListener('DOMContentLoaded', () => {
+            const hotel = document.querySelector('#hotel');
+            let currentScale = 0.1;
+
+            // Keyboard controls for testing
+            document.addEventListener('keydown', (e) => {
+                switch(e.key) {
+                    case 'ArrowUp':
+                        currentScale += 0.05;
+                        hotel.setAttribute('scale', `${currentScale} ${currentScale} ${currentScale}`);
+                        break;
+                    case 'ArrowDown':
+                        currentScale = Math.max(0.05, currentScale - 0.05);
+                        hotel.setAttribute('scale', `${currentScale} ${currentScale} ${currentScale}`);
+                        break;
+                }
+            });
+        });
+
+        // Quest-specific optimizations
+        if (/OculusBrowser/.test(navigator.userAgent)) {
+            console.log('Quest browser detected - VR optimized');
+            
+            // Hide info panel after 5 seconds in VR
+            setTimeout(() => {
+                const panel = document.querySelector('.info-panel');
+                if (panel) panel.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
