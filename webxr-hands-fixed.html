@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebXR Hands Fixed - Quest 3</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .ui-overlay {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 100;
+            max-width: 300px;
+        }
+
+        .start-button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 20px 40px;
+            background: #00d4aa;
+            color: white;
+            border: none;
+            border-radius: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 100;
+        }
+
+        .status {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 200;
+            font-size: 20px;
+        }
+
+        .hand-info {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 122, 255, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 100;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="ui-overlay">
+        <h3>🤲 WebXR Hands - Fixed</h3>
+        <p><strong>Look for:</strong></p>
+        <p>🟢 <strong>Green sphere</strong> = Left hand</p>
+        <p>🔴 <strong>Red sphere</strong> = Right hand</p>
+        <p>📏 <strong>White lines</strong> = Pointing at hotel</p>
+        <p>🏨 <strong>Brown hotel</strong> = Grab target</p>
+    </div>
+
+    <div class="status" id="status">
+        <strong>🎯 Ready to Start</strong><br>
+        <small>Tap the button below</small>
+    </div>
+
+    <div class="hand-info" id="handInfo" style="display: none;">
+        👐 Hands: 0<br>
+        📏 Distance: --
+    </div>
+
+    <button class="start-button" id="startButton">
+        🏨 Start Hand Tracking
+    </button>
+    
+    <button class="start-button" id="testButton" style="bottom: 100px; background: #ff6b6b;">
+        🔧 Test Button
+    </button>
+
+    <canvas id="webxr-canvas"></canvas>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.157.0/build/three.module.js';
+        import { GLTFLoader } from 'https://unpkg.com/three@0.157.0/examples/jsm/loaders/GLTFLoader.js';
+        import { XRControllerModelFactory } from 'https://unpkg.com/three@0.157.0/examples/jsm/webxr/XRControllerModelFactory.js';
+        import { XRHandModelFactory } from 'https://unpkg.com/three@0.157.0/examples/jsm/webxr/XRHandModelFactory.js';
+
+        const canvas = document.getElementById('webxr-canvas');
+        const startButton = document.getElementById('startButton');
+        const testButton = document.getElementById('testButton');
+        const status = document.getElementById('status');
+        const handInfo = document.getElementById('handInfo');
+
+        let scene, camera, renderer, session;
+        let hotelModel;
+        let raycaster, mouse;
+        let handModelFactory, controllerModelFactory;
+        let hand1, hand2;
+        let controller1, controller2;
+        let grabbedObject = null;
+        let grabbing = { left: false, right: false };
+        let handJoints = { left: {}, right: {} };
+        let pinchStrength = { left: 0, right: 0 };
+        let handDetectionTimer = 0;
+
+        // Status updates
+        function updateStatus(message, submessage = '') {
+            status.innerHTML = `<strong>${message}</strong>${submessage ? '<br><small>' + submessage + '</small>' : ''}`;
+        }
+
+        function updateHandInfo(handCount, distance = '--') {
+            handInfo.innerHTML = `👐 Hands: ${handCount}<br>📏 Distance: ${distance}`;
+            handInfo.style.display = handCount > 0 ? 'block' : 'none';
+        }
+
+        // Initialize Three.js scene with WebXR
+        function initScene() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: canvas, 
+                alpha: true,
+                antialias: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.xr.enabled = true;
+
+            // Enhanced lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(2, 4, 2);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            // Initialize raycaster for interaction
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Initialize hand and controller factories
+            handModelFactory = new XRHandModelFactory();
+            controllerModelFactory = new XRControllerModelFactory();
+
+            // Create hotel model
+            loadHotelModel();
+            
+            // Setup WebXR hands and controllers
+            setupXRHands();
+        }
+
+        // Load actual hotel GLB model
+        function loadHotelModel() {
+            const loader = new GLTFLoader();
+            
+            loader.load('model.glb', (gltf) => {
+                hotelModel = gltf.scene;
+                
+                // Scale and position the hotel
+                hotelModel.scale.setScalar(0.05);
+                hotelModel.position.set(0, 1.2, -1.5);
+                
+                // Enable shadows
+                hotelModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        child.userData = { grabbable: true };
+                    }
+                });
+                
+                scene.add(hotelModel);
+                updateStatus('🏨 Hotel Loaded', 'Ready to start hand tracking');
+                
+            }, (progress) => {
+                const percent = (progress.loaded / progress.total * 100).toFixed(0);
+                updateStatus('📦 Loading Hotel...', `${percent}% complete`);
+                
+            }, (error) => {
+                console.error('Error loading hotel model:', error);
+                updateStatus('❌ Model Load Failed', 'Using fallback hotel');
+                createFallbackHotel();
+            });
+        }
+
+        // Fallback hotel if GLB fails to load
+        function createFallbackHotel() {
+            const hotelGroup = new THREE.Group();
+
+            // Main building
+            const buildingGeometry = new THREE.BoxGeometry(0.6, 0.4, 0.4);
+            const buildingMaterial = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
+            const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+            building.castShadow = true;
+            building.receiveShadow = true;
+            building.userData = { grabbable: true };
+            hotelGroup.add(building);
+
+            // Roof
+            const roofGeometry = new THREE.ConeGeometry(0.35, 0.2, 4);
+            const roofMaterial = new THREE.MeshPhongMaterial({ color: 0x654321 });
+            const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+            roof.position.y = 0.3;
+            roof.rotation.y = Math.PI / 4;
+            roof.castShadow = true;
+            roof.userData = { grabbable: true };
+            hotelGroup.add(roof);
+
+            hotelModel = hotelGroup;
+            hotelModel.position.set(0, 1.2, -1.5);
+            hotelModel.userData = { grabbable: true };
+            scene.add(hotelModel);
+        }
+
+        // Setup WebXR Hands and Controllers
+        function setupXRHands() {
+            // Hand 1 (left)
+            hand1 = renderer.xr.getHand(0);
+            hand1.addEventListener('connected', (event) => {
+                const handModel = handModelFactory.createHandModel(hand1, 'mesh');
+                handModel.material = new THREE.MeshPhongMaterial({ 
+                    color: 0x00ff00, 
+                    transparent: true, 
+                    opacity: 0.8 
+                });
+                hand1.add(handModel);
+                updateStatus('👐 Left Hand Connected', 'Wave your hands to activate tracking');
+            });
+            hand1.addEventListener('disconnected', () => {
+                grabbing.left = false;
+            });
+            scene.add(hand1);
+
+            // Hand 2 (right) 
+            hand2 = renderer.xr.getHand(1);
+            hand2.addEventListener('connected', (event) => {
+                const handModel = handModelFactory.createHandModel(hand2, 'mesh');
+                handModel.material = new THREE.MeshPhongMaterial({ 
+                    color: 0xff0000, 
+                    transparent: true, 
+                    opacity: 0.8 
+                });
+                hand2.add(handModel);
+                updateStatus('👐 Both Hands Connected', 'Pinch to grab hotel');
+            });
+            hand2.addEventListener('disconnected', () => {
+                grabbing.right = false;
+            });
+            scene.add(hand2);
+
+            // Controller 1 (fallback)
+            controller1 = renderer.xr.getController(0);
+            controller1.addEventListener('selectstart', () => onSelectStart(0));
+            controller1.addEventListener('selectend', () => onSelectEnd(0));
+            scene.add(controller1);
+
+            // Controller 2 (fallback)
+            controller2 = renderer.xr.getController(1);
+            controller2.addEventListener('selectstart', () => onSelectStart(1));
+            controller2.addEventListener('selectend', () => onSelectEnd(1));
+            scene.add(controller2);
+        }
+
+        // Controller interaction fallback
+        function onSelectStart(controllerIndex) {
+            const controller = controllerIndex === 0 ? controller1 : controller2;
+            const intersections = getIntersections(controller);
+            
+            if (intersections.length > 0) {
+                const intersection = intersections[0];
+                const object = intersection.object;
+                
+                if (object.userData.grabbable || object.parent.userData.grabbable) {
+                    grabbedObject = object.parent.userData.grabbable ? object.parent : object;
+                    updateStatus('🎯 Grabbed with Controller!', 'Release trigger to drop');
+                }
+            }
+        }
+
+        function onSelectEnd(controllerIndex) {
+            if (grabbedObject) {
+                grabbedObject = null;
+                updateStatus('👐 Released!', 'Use hands or controllers to grab again');
+            }
+        }
+
+        // Raycasting for controller interactions
+        function getIntersections(controller) {
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            
+            return raycaster.intersectObjects([hotelModel], true);
+        }
+
+        // Start WebXR session with hand tracking
+        async function startWebXR() {
+            try {
+                updateStatus('🚀 Starting AR...', 'Testing WebXR support');
+                console.log('Button clicked - starting WebXR...');
+                
+                // Check WebXR support first
+                if (!navigator.xr) {
+                    throw new Error('WebXR not supported in this browser');
+                }
+                
+                console.log('WebXR available, checking AR support...');
+                const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                console.log('AR supported:', supported);
+                
+                if (!supported) {
+                    throw new Error('Immersive AR not supported on this device');
+                }
+                
+                updateStatus('🚀 Starting AR...', 'Requesting camera access');
+                console.log('Requesting AR session...');
+                
+                session = await navigator.xr.requestSession('immersive-ar', {
+                    requiredFeatures: ['local-floor'],
+                    optionalFeatures: ['hand-tracking']
+                });
+
+                console.log('AR session created successfully:', session);
+                updateStatus('✅ AR Started!', 'Setting up scene...');
+
+                // Set up session
+                await renderer.xr.setSession(session);
+                console.log('Session set on renderer');
+                
+                // Hide UI
+                document.querySelector('.ui-overlay').style.display = 'none';
+                startButton.style.display = 'none';
+
+                // Start render loop
+                renderer.setAnimationLoop(render);
+                console.log('Render loop started');
+
+                // Session event handlers
+                session.addEventListener('inputsourceschange', onInputSourcesChange);
+                session.addEventListener('end', onSessionEnd);
+
+                updateStatus('👐 AR Active!', 'Wave hands to activate tracking');
+                console.log('WebXR session fully initialized');
+
+            } catch (error) {
+                updateStatus('❌ AR Failed', error.message);
+                console.error('WebXR error:', error);
+                
+                // Show button again on failure
+                startButton.style.display = 'block';
+                document.querySelector('.ui-overlay').style.display = 'block';
+            }
+        }
+
+        // Handle input sources (hands) - ENHANCED
+        function onInputSourcesChange(event) {
+            updateStatus('🔄 Input Sources Changed', 'Detecting hands...');
+        }
+
+        // Advanced hand tracking with gesture detection
+        function updateHandTracking(frame, referenceSpace) {
+            if (!frame || !hotelModel) return;
+
+            let handsActive = 0;
+            let closestDistance = Infinity;
+
+            // Process both hands
+            [hand1, hand2].forEach((hand, index) => {
+                const handedness = index === 0 ? 'left' : 'right';
+                
+                if (hand.joints && Object.keys(hand.joints).length > 0) {
+                    handsActive++;
+                    
+                    // Get key joints
+                    const wrist = hand.joints['wrist'];
+                    const thumbTip = hand.joints['thumb-tip'];
+                    const indexTip = hand.joints['index-finger-tip'];
+                    const middleTip = hand.joints['middle-finger-tip'];
+                    
+                    if (wrist && thumbTip && indexTip) {
+                        // Calculate pinch strength
+                        const thumbPos = new THREE.Vector3();
+                        const indexPos = new THREE.Vector3();
+                        
+                        thumbPos.setFromMatrixPosition(thumbTip.matrixWorld);
+                        indexPos.setFromMatrixPosition(indexTip.matrixWorld);
+                        
+                        const pinchDistance = thumbPos.distanceTo(indexPos);
+                        const pinchThreshold = 0.04;
+                        const currentPinchStrength = Math.max(0, 1 - (pinchDistance / pinchThreshold));
+                        
+                        pinchStrength[handedness] = currentPinchStrength;
+                        
+                        // Calculate distance to hotel
+                        const distanceToHotel = indexPos.distanceTo(hotelModel.position);
+                        closestDistance = Math.min(closestDistance, distanceToHotel);
+                        
+                        // Handle grabbing
+                        handleGrabbing(handedness, indexPos, currentPinchStrength, distanceToHotel);
+                        
+                        // Visual feedback on hand
+                        if (hand.children.length > 0) {
+                            const handMesh = hand.children[0];
+                            if (handMesh.material) {
+                                // Change hand color based on pinch strength
+                                const baseColor = handedness === 'left' ? 0x00ff00 : 0xff0000;
+                                const intensity = currentPinchStrength;
+                                handMesh.material.emissive.setHex(intensity > 0.5 ? 0xffffff : baseColor);
+                                handMesh.material.opacity = 0.6 + (intensity * 0.4);
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Update UI
+            const distanceText = closestDistance === Infinity ? '--' : (closestDistance * 100).toFixed(0) + 'cm';
+            updateHandInfo(handsActive, distanceText);
+            
+            // Update grabbed object position
+            updateGrabbedObject();
+        }
+
+        // Handle grabbing logic
+        function handleGrabbing(handedness, handPos, pinchStrength, distance) {
+            const isStrongPinch = pinchStrength > 0.7;
+            const isCloseToHotel = distance < 0.8;
+            
+            if (isStrongPinch && isCloseToHotel && !grabbedObject && !grabbing[handedness]) {
+                // Start grabbing
+                grabbedObject = hotelModel;
+                grabbing[handedness] = {
+                    active: true,
+                    initialHandPos: handPos.clone(),
+                    initialObjectPos: hotelModel.position.clone(),
+                    offset: hotelModel.position.clone().sub(handPos)
+                };
+                
+                // Visual feedback
+                hotelModel.traverse((child) => {
+                    if (child.material) {
+                        child.material.emissive.setHex(0x444444);
+                    }
+                });
+                
+                updateStatus('✅ GRABBED!', `${handedness} hand is controlling hotel`);
+                
+            } else if (grabbedObject && grabbing[handedness] && pinchStrength < 0.3) {
+                // Release grab
+                grabbing[handedness] = false;
+                
+                // Check if any hand is still grabbing
+                const stillGrabbing = Object.values(grabbing).some(g => g.active);
+                
+                if (!stillGrabbing) {
+                    // Reset hotel appearance
+                    hotelModel.traverse((child) => {
+                        if (child.material) {
+                            child.material.emissive.setHex(0x000000);
+                        }
+                    });
+                    
+                    grabbedObject = null;
+                    updateStatus('👐 Released!', 'Pinch near hotel to grab again');
+                }
+            }
+        }
+
+        // Update grabbed object position
+        function updateGrabbedObject() {
+            if (!grabbedObject) return;
+            
+            // Find the hand that's actively grabbing
+            const activeGrab = Object.entries(grabbing).find(([hand, grab]) => grab && grab.active);
+            
+            if (activeGrab) {
+                const [handedness, grab] = activeGrab;
+                const hand = handedness === 'left' ? hand1 : hand2;
+                
+                if (hand.joints && hand.joints['index-finger-tip']) {
+                    const indexTip = hand.joints['index-finger-tip'];
+                    const currentHandPos = new THREE.Vector3();
+                    currentHandPos.setFromMatrixPosition(indexTip.matrixWorld);
+                    
+                    // Update object position with offset
+                    grabbedObject.position.copy(currentHandPos).add(grab.offset);
+                }
+            }
+        }
+
+
+        // Enhanced render loop
+        function render(timestamp, frame) {
+            if (frame) {
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                updateHandTracking(frame, referenceSpace);
+            }
+
+            // Animate hotel rotation when not grabbed
+            if (hotelModel && !grabbedObject) {
+                hotelModel.rotation.y += 0.005;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Session end handler
+        function onSessionEnd() {
+            updateStatus('🎯 Ready to Start', 'Tap the button below');
+            
+            // Show UI again
+            document.querySelector('.ui-overlay').style.display = 'block';
+            startButton.style.display = 'block';
+            handInfo.style.display = 'none';
+            
+            // Reset
+            session = null;
+            leftHand = null;
+            rightHand = null;
+            grabbedObject = null;
+            
+            // Hide visuals
+            leftHandVisual.visible = false;
+            rightHandVisual.visible = false;
+            leftPointerLine.visible = false;
+            rightPointerLine.visible = false;
+        }
+
+        // Test button functionality
+        function testButtonClick() {
+            updateStatus('✅ Button Works!', 'Testing WebXR availability...');
+            console.log('Test button clicked');
+            
+            if (navigator.xr) {
+                updateStatus('✅ WebXR Available!', 'Checking AR support...');
+                navigator.xr.isSessionSupported('immersive-ar').then(supported => {
+                    if (supported) {
+                        updateStatus('✅ AR Supported!', 'Ready to start hand tracking');
+                    } else {
+                        updateStatus('❌ AR Not Supported', 'This device cannot run AR');
+                    }
+                });
+            } else {
+                updateStatus('❌ No WebXR', 'Use Quest browser or compatible device');
+            }
+        }
+
+        // Initialize everything
+        function init() {
+            console.log('Initializing...');
+            console.log('Navigator.xr available:', !!navigator.xr);
+            
+            if (!navigator.xr) {
+                updateStatus('❌ WebXR Not Available', 'Use Quest browser');
+                return;
+            }
+
+            initScene();
+            startButton.addEventListener('click', startWebXR);
+            testButton.addEventListener('click', testButtonClick);
+            
+            console.log('Event listeners added');
+            updateStatus('🎯 Ready to Start', 'Tap either button to test');
+        }
+
+        // Start initialization
+        init();
+    </script>
+</body>
+</html>
