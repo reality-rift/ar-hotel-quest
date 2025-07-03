@@ -1,0 +1,13 @@
+{
+  "name": "ar-hotel-visualization",
+  "version": "1.0.0",
+  "description": "WebXR AR Hotel Visualization for Meta Quest 3",
+  "main": "app.js",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "build": "echo 'No build step required'"
+  },
+  "keywords": ["webxr", "ar", "meta-quest", "three.js", "hand-tracking"],
+  "author": "",
+  "license": "ISC"
+}
