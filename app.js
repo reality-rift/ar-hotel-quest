@@ -51,7 +51,7 @@ function init() {
     const loader = new GLTFLoader();
     loader.load('./HotelB_AR.glb', function (gltf) {
         hotelModel = gltf.scene;
-        hotelModel.scale.set(0.0005, 0.0005, 0.0005);
+        hotelModel.scale.set(0.005, 0.005, 0.005);
         hotelModel.visible = false;
         
         hotelModel.traverse((child) => {
@@ -235,10 +235,10 @@ function updateHandInteraction(hand) {
                     const rotationSpeed = 2;
                     hand.userData.selected.rotation.y += delta.x * rotationSpeed;
                     
-                    const scaleSpeed = 0.001;
+                    const scaleSpeed = 0.01;
                     const scaleDelta = delta.y * scaleSpeed;
                     const newScale = hand.userData.selected.scale.x + scaleDelta;
-                    if (newScale > 0.0001 && newScale < 0.002) {
+                    if (newScale > 0.001 && newScale < 0.02) {
                         hand.userData.selected.scale.set(newScale, newScale, newScale);
                     }
                 }
