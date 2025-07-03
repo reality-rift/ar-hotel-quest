@@ -123,10 +123,12 @@ function init() {
                 statusElement.textContent = 'AR supported. Click Start AR to begin.';
             } else {
                 statusElement.textContent = 'AR not supported on this device.';
+                enableDesktopPreview();
             }
         });
     } else {
         statusElement.textContent = 'WebXR not available in this browser.';
+        enableDesktopPreview();
     }
 
     window.addEventListener('resize', onWindowResize);
@@ -318,4 +320,65 @@ function getPinchPosition(hand) {
     pinchPos.addVectors(indexTip.position, thumbTip.position).multiplyScalar(0.5);
     
     return pinchPos;
+}
+
+function enableDesktopPreview() {
+    startButton.textContent = 'Preview Model';
+    startButton.style.display = 'inline-block';
+    statusElement.textContent = 'Desktop preview mode. Click to view model.';
+    
+    startButton.addEventListener('click', () => {
+        if (!hotelModel.visible) {
+            // Place model in front of camera for desktop preview
+            hotelModel.position.set(0, 0, -1);
+            hotelModel.visible = true;
+            startButton.style.display = 'none';
+            statusElement.textContent = 'Desktop preview: Use mouse to rotate, scroll to zoom.';
+            
+            // Add mouse controls for desktop
+            addMouseControls();
+        }
+    });
+}
+
+function addMouseControls() {
+    let isMouseDown = false;
+    let mouseX = 0;
+    let mouseY = 0;
+    
+    renderer.domElement.addEventListener('mousedown', (event) => {
+        isMouseDown = true;
+        mouseX = event.clientX;
+        mouseY = event.clientY;
+    });
+    
+    renderer.domElement.addEventListener('mousemove', (event) => {
+        if (!isMouseDown || !hotelModel.visible) return;
+        
+        const deltaX = event.clientX - mouseX;
+        const deltaY = event.clientY - mouseY;
+        
+        // Rotate model based on mouse movement
+        hotelModel.rotation.y += deltaX * 0.01;
+        hotelModel.rotation.x += deltaY * 0.01;
+        
+        mouseX = event.clientX;
+        mouseY = event.clientY;
+    });
+    
+    renderer.domElement.addEventListener('mouseup', () => {
+        isMouseDown = false;
+    });
+    
+    renderer.domElement.addEventListener('wheel', (event) => {
+        if (!hotelModel.visible) return;
+        
+        event.preventDefault();
+        const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1;
+        const newScale = hotelModel.scale.x * scaleFactor;
+        
+        if (newScale > 0.001 && newScale < 0.02) {
+            hotelModel.scale.set(newScale, newScale, newScale);
+        }
+    });
 }
