@@ -97,6 +97,10 @@
     <button class="start-button" id="startButton">
         🏨 Start Hand Tracking
     </button>
+    
+    <button class="start-button" id="testButton" style="bottom: 100px; background: #ff6b6b;">
+        🔧 Test Button
+    </button>
 
     <canvas id="webxr-canvas"></canvas>
 
@@ -108,6 +112,7 @@
 
         const canvas = document.getElementById('webxr-canvas');
         const startButton = document.getElementById('startButton');
+        const testButton = document.getElementById('testButton');
         const status = document.getElementById('status');
         const handInfo = document.getElementById('handInfo');
 
@@ -320,17 +325,36 @@
         // Start WebXR session with hand tracking
         async function startWebXR() {
             try {
+                updateStatus('🚀 Starting AR...', 'Testing WebXR support');
+                console.log('Button clicked - starting WebXR...');
+                
+                // Check WebXR support first
+                if (!navigator.xr) {
+                    throw new Error('WebXR not supported in this browser');
+                }
+                
+                console.log('WebXR available, checking AR support...');
+                const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                console.log('AR supported:', supported);
+                
+                if (!supported) {
+                    throw new Error('Immersive AR not supported on this device');
+                }
+                
                 updateStatus('🚀 Starting AR...', 'Requesting camera access');
+                console.log('Requesting AR session...');
                 
                 session = await navigator.xr.requestSession('immersive-ar', {
                     requiredFeatures: ['local-floor'],
                     optionalFeatures: ['hand-tracking']
                 });
 
-                updateStatus('✅ AR Started!', 'Wave your hands to activate tracking');
+                console.log('AR session created successfully:', session);
+                updateStatus('✅ AR Started!', 'Setting up scene...');
 
                 // Set up session
                 await renderer.xr.setSession(session);
+                console.log('Session set on renderer');
                 
                 // Hide UI
                 document.querySelector('.ui-overlay').style.display = 'none';
@@ -338,17 +362,22 @@
 
                 // Start render loop
                 renderer.setAnimationLoop(render);
+                console.log('Render loop started');
 
                 // Session event handlers
                 session.addEventListener('inputsourceschange', onInputSourcesChange);
                 session.addEventListener('end', onSessionEnd);
 
-                // Start hand detection timer
-                handDetectionTimer = 0;
+                updateStatus('👐 AR Active!', 'Wave hands to activate tracking');
+                console.log('WebXR session fully initialized');
 
             } catch (error) {
                 updateStatus('❌ AR Failed', error.message);
-                console.error('WebXR failed:', error);
+                console.error('WebXR error:', error);
+                
+                // Show button again on failure
+                startButton.style.display = 'block';
+                document.querySelector('.ui-overlay').style.display = 'block';
             }
         }
 
@@ -526,8 +555,30 @@
             rightPointerLine.visible = false;
         }
 
+        // Test button functionality
+        function testButtonClick() {
+            updateStatus('✅ Button Works!', 'Testing WebXR availability...');
+            console.log('Test button clicked');
+            
+            if (navigator.xr) {
+                updateStatus('✅ WebXR Available!', 'Checking AR support...');
+                navigator.xr.isSessionSupported('immersive-ar').then(supported => {
+                    if (supported) {
+                        updateStatus('✅ AR Supported!', 'Ready to start hand tracking');
+                    } else {
+                        updateStatus('❌ AR Not Supported', 'This device cannot run AR');
+                    }
+                });
+            } else {
+                updateStatus('❌ No WebXR', 'Use Quest browser or compatible device');
+            }
+        }
+
         // Initialize everything
         function init() {
+            console.log('Initializing...');
+            console.log('Navigator.xr available:', !!navigator.xr);
+            
             if (!navigator.xr) {
                 updateStatus('❌ WebXR Not Available', 'Use Quest browser');
                 return;
@@ -535,6 +586,10 @@
 
             initScene();
             startButton.addEventListener('click', startWebXR);
+            testButton.addEventListener('click', testButtonClick);
+            
+            console.log('Event listeners added');
+            updateStatus('🎯 Ready to Start', 'Tap either button to test');
         }
 
         // Start initialization
