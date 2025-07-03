@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple WebXR Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #222;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        
+        button {
+            display: block;
+            width: 90%;
+            margin: 20px auto;
+            padding: 30px;
+            font-size: 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        
+        #btn1 { background: #4CAF50; color: white; }
+        #btn2 { background: #2196F3; color: white; }
+        #btn3 { background: #ff9800; color: white; }
+        #btn4 { background: #f44336; color: white; }
+        
+        #output {
+            padding: 20px;
+            background: #333;
+            border-radius: 10px;
+            margin: 20px;
+            min-height: 200px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Simple WebXR Test</h1>
+    
+    <button id="btn1" onclick="testBasic()">
+        1. Test Basic JavaScript
+    </button>
+    
+    <button id="btn2" onclick="testWebXR()">
+        2. Test WebXR Support
+    </button>
+    
+    <button id="btn3" onclick="testThreeJS()">
+        3. Test Three.js Loading
+    </button>
+    
+    <button id="btn4" onclick="testARSession()">
+        4. Test AR Session
+    </button>
+    
+    <div id="output">Click a button to test...</div>
+
+    <script>
+        const output = document.getElementById('output');
+        
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            output.textContent += time + ' - ' + message + '\n';
+            console.log(message);
+        }
+        
+        function testBasic() {
+            output.textContent = '';
+            log('✅ JavaScript is working!');
+            log('User Agent: ' + navigator.userAgent);
+            log('Is Quest: ' + /OculusBrowser/.test(navigator.userAgent));
+            log('Window size: ' + window.innerWidth + 'x' + window.innerHeight);
+            log('Protocol: ' + window.location.protocol);
+            
+            // Try inline alert
+            alert('If you see this popup, JavaScript is working!');
+        }
+        
+        function testWebXR() {
+            output.textContent = '';
+            log('Testing WebXR...');
+            
+            if ('xr' in navigator) {
+                log('✅ navigator.xr exists');
+                
+                navigator.xr.isSessionSupported('immersive-ar').then(supported => {
+                    log('AR supported: ' + supported);
+                }).catch(err => {
+                    log('❌ AR check error: ' + err.message);
+                });
+                
+                navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+                    log('VR supported: ' + supported);
+                }).catch(err => {
+                    log('❌ VR check error: ' + err.message);
+                });
+            } else {
+                log('❌ navigator.xr NOT found');
+                log('Available on navigator:');
+                for (let key in navigator) {
+                    if (key.toLowerCase().includes('xr') || key.toLowerCase().includes('vr')) {
+                        log('  - ' + key);
+                    }
+                }
+            }
+        }
+        
+        function testThreeJS() {
+            output.textContent = '';
+            log('Testing Three.js...');
+            
+            const script = document.createElement('script');
+            script.type = 'module';
+            script.textContent = `
+                import * as THREE from 'https://unpkg.com/three@0.157.0/build/three.module.js';
+                
+                window.testTHREE = function() {
+                    const output = document.getElementById('output');
+                    output.textContent += '\\n✅ Three.js loaded successfully!\\n';
+                    output.textContent += 'THREE.REVISION: ' + THREE.REVISION + '\\n';
+                    
+                    // Try creating a simple scene
+                    const scene = new THREE.Scene();
+                    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+                    const geometry = new THREE.BoxGeometry(1, 1, 1);
+                    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+                    const cube = new THREE.Mesh(geometry, material);
+                    scene.add(cube);
+                    
+                    output.textContent += '✅ Three.js scene created\\n';
+                }
+                
+                window.testTHREE();
+            `;
+            
+            document.body.appendChild(script);
+            
+            log('Script tag added, waiting for module to load...');
+        }
+        
+        async function testARSession() {
+            output.textContent = '';
+            log('Testing AR Session...');
+            
+            if (!navigator.xr) {
+                log('❌ No WebXR support');
+                return;
+            }
+            
+            try {
+                log('Checking AR support...');
+                const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                log('AR supported: ' + supported);
+                
+                if (!supported) {
+                    log('❌ AR not supported on this device');
+                    return;
+                }
+                
+                log('Requesting AR session...');
+                const session = await navigator.xr.requestSession('immersive-ar', {
+                    requiredFeatures: ['local-floor']
+                });
+                
+                log('✅ AR Session created!');
+                log('Session ID: ' + session.inputSources.length + ' input sources');
+                
+                // End session after 3 seconds
+                setTimeout(() => {
+                    session.end();
+                    log('Session ended');
+                }, 3000);
+                
+            } catch (error) {
+                log('❌ Error: ' + error.message);
+                log('Stack: ' + error.stack);
+            }
+        }
+        
+        // Initial log
+        log('Page loaded. Ready for testing.');
+    </script>
+</body>
+</html>
