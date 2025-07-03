@@ -22,10 +22,18 @@ A WebXR AR application that allows users to place and interact with a 3D hotel m
 
 ### Desktop Preview
 1. Open the site on your desktop browser
-2. Click "Preview Model" button
-3. Use mouse controls to interact:
-   - Click and drag to rotate
-   - Scroll wheel to zoom in/out
+2. Choose either:
+   - **Preview Model**: Static model with mouse controls
+   - **Mirror VR Session**: Real-time view of VR interactions
+
+#### Preview Mode
+- Click and drag to rotate
+- Scroll wheel to zoom in/out
+
+#### Mirror Mode
+- Shows live model position, rotation, and scale from VR session
+- Updates in real-time as you interact in VR
+- Open desktop browser first, then start VR session
 
 ## Technologies
 

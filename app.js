@@ -14,6 +14,8 @@ let selectedObject = null;
 let handModelFactory;
 let initialPinchDistance = null;
 let initialScale = null;
+let mirrorMode = false;
+let mirrorSocket = null;
 
 const statusElement = document.getElementById('status');
 const startButton = document.getElementById('startAR');
@@ -215,6 +217,9 @@ function render(timestamp, frame) {
 
         updateHandInteraction(hand1);
         updateHandInteraction(hand2);
+        
+        // Broadcast VR data for mirror mode
+        broadcastVRData();
     }
 
     renderer.render(scene, camera);
@@ -323,22 +328,79 @@ function getPinchPosition(hand) {
 }
 
 function enableDesktopPreview() {
+    // Add mirror mode button
+    const mirrorButton = document.createElement('button');
+    mirrorButton.textContent = 'Mirror VR Session';
+    mirrorButton.id = 'mirrorButton';
+    mirrorButton.style.cssText = `
+        background-color: #FF6B35;
+        border: none;
+        color: white;
+        padding: 15px 32px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        margin: 4px 2px;
+        cursor: pointer;
+        border-radius: 4px;
+        margin-right: 10px;
+    `;
+    
     startButton.textContent = 'Preview Model';
     startButton.style.display = 'inline-block';
-    statusElement.textContent = 'Desktop preview mode. Click to view model.';
+    startButton.parentNode.insertBefore(mirrorButton, startButton);
+    statusElement.textContent = 'Desktop mode: Preview model or mirror VR session.';
     
+    // Preview mode
     startButton.addEventListener('click', () => {
-        if (!hotelModel.visible) {
-            // Place model in front of camera for desktop preview
+        if (!hotelModel.visible && !mirrorMode) {
             hotelModel.position.set(0, 0, -1);
             hotelModel.visible = true;
             startButton.style.display = 'none';
+            mirrorButton.style.display = 'none';
             statusElement.textContent = 'Desktop preview: Use mouse to rotate, scroll to zoom.';
-            
-            // Add mouse controls for desktop
             addMouseControls();
         }
     });
+    
+    // Mirror mode
+    mirrorButton.addEventListener('click', () => {
+        enableMirrorMode();
+    });
+}
+
+function enableMirrorMode() {
+    mirrorMode = true;
+    document.getElementById('mirrorButton').style.display = 'none';
+    startButton.style.display = 'none';
+    statusElement.textContent = 'Mirror mode: Waiting for VR session data...';
+    
+    // Start listening for VR session data
+    startMirrorListener();
+    
+    // Set up mirror view
+    camera.position.set(0, 1, 2);
+    camera.lookAt(0, 0, 0);
+    
+    // Add visual indicator that we're in mirror mode
+    const mirrorIndicator = document.createElement('div');
+    mirrorIndicator.id = 'mirrorIndicator';
+    mirrorIndicator.innerHTML = '📺 MIRROR MODE - Showing VR Session';
+    mirrorIndicator.style.cssText = `
+        position: absolute;
+        top: 50px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(255, 107, 53, 0.9);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: bold;
+        z-index: 200;
+    `;
+    document.body.appendChild(mirrorIndicator);
 }
 
 function addMouseControls() {
@@ -381,4 +443,74 @@ function addMouseControls() {
             hotelModel.scale.set(newScale, newScale, newScale);
         }
     });
+}
+
+function startMirrorListener() {
+    // Use localStorage to share data between VR and desktop sessions
+    const checkForVRData = () => {
+        const vrData = localStorage.getItem('vrSessionData');
+        if (vrData) {
+            try {
+                const data = JSON.parse(vrData);
+                updateMirrorFromVRData(data);
+            } catch (e) {
+                console.error('Error parsing VR data:', e);
+            }
+        }
+    };
+    
+    // Check for VR data every 50ms for smooth updates
+    setInterval(checkForVRData, 50);
+    
+    // Also listen for storage events (when another tab updates the data)
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'vrSessionData' && e.newValue) {
+            try {
+                const data = JSON.parse(e.newValue);
+                updateMirrorFromVRData(data);
+            } catch (error) {
+                console.error('Error parsing VR data from storage event:', error);
+            }
+        }
+    });
+}
+
+function updateMirrorFromVRData(data) {
+    if (!hotelModel) return;
+    
+    // Update model visibility
+    if (data.modelVisible && !hotelModel.visible) {
+        hotelModel.visible = true;
+        statusElement.textContent = 'Mirror mode: Showing live VR session';
+    }
+    
+    // Update model position, rotation, and scale
+    if (data.modelVisible) {
+        hotelModel.position.set(data.position.x, data.position.y, data.position.z);
+        hotelModel.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
+        hotelModel.scale.set(data.scale.x, data.scale.y, data.scale.z);
+    }
+    
+    // Update status if provided
+    if (data.status) {
+        statusElement.textContent = `Mirror: ${data.status}`;
+    }
+}
+
+function broadcastVRData() {
+    if (!renderer.xr.isPresenting) return;
+    
+    const vrData = {
+        modelVisible: hotelModel ? hotelModel.visible : false,
+        position: hotelModel ? hotelModel.position : { x: 0, y: 0, z: 0 },
+        rotation: hotelModel ? hotelModel.rotation : { x: 0, y: 0, z: 0 },
+        scale: hotelModel ? hotelModel.scale : { x: 1, y: 1, z: 1 },
+        timestamp: Date.now()
+    };
+    
+    try {
+        localStorage.setItem('vrSessionData', JSON.stringify(vrData));
+    } catch (e) {
+        console.error('Error broadcasting VR data:', e);
+    }
 }
