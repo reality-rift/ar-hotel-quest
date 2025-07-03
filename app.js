@@ -283,7 +283,29 @@ function isPinching(hand) {
     const thumbTip = hand.joints['thumb-tip'];
     const distance = indexTip.position.distanceTo(thumbTip.position);
     
-    return distance < 0.05;
+    // More restrictive pinch detection - only thumb and index finger
+    const isPinchDistance = distance < 0.03; // Stricter distance
+    
+    // Additional check: ensure other fingers are not all closed (not a fist)
+    const middleTip = hand.joints['middle-finger-tip'];
+    const ringTip = hand.joints['ring-finger-tip'];
+    const pinkyTip = hand.joints['pinky-finger-tip'];
+    const wrist = hand.joints['wrist'];
+    
+    if (middleTip && ringTip && pinkyTip && wrist) {
+        // Check if other fingers are too close to wrist (indicating a fist)
+        const middleDistance = middleTip.position.distanceTo(wrist.position);
+        const ringDistance = ringTip.position.distanceTo(wrist.position);
+        const pinkyDistance = pinkyTip.position.distanceTo(wrist.position);
+        
+        // If other fingers are too close to wrist, it's probably a fist
+        const avgOtherFingerDistance = (middleDistance + ringDistance + pinkyDistance) / 3;
+        const isFist = avgOtherFingerDistance < 0.12; // Threshold for fist detection
+        
+        return isPinchDistance && !isFist;
+    }
+    
+    return isPinchDistance;
 }
 
 function getPinchPosition(hand) {
