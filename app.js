@@ -12,6 +12,8 @@ let hitTestSourceRequested = false;
 let hotelModel = null;
 let selectedObject = null;
 let handModelFactory;
+let initialPinchDistance = null;
+let initialScale = null;
 
 const statusElement = document.getElementById('status');
 const startButton = document.getElementById('startAR');
@@ -160,7 +162,7 @@ function onSelectStart(event) {
         hotelModel.position.setFromMatrixPosition(reticle.matrix);
         hotelModel.visible = true;
         reticle.visible = false;
-        statusElement.textContent = 'Model placed. Use hand gestures to interact.';
+        statusElement.textContent = 'Model placed. One hand: move/rotate. Two hands: scale.';
     }
 }
 
@@ -217,38 +219,78 @@ function render(timestamp, frame) {
 }
 
 function updateHandInteraction(hand) {
-    if (hand.userData.selected && hand.joints['index-finger-tip']) {
-        const indexTip = hand.joints['index-finger-tip'];
-        const thumbTip = hand.joints['thumb-tip'];
+    // Check if both hands are pinching
+    const hand1Pinching = isPinching(hand1);
+    const hand2Pinching = isPinching(hand2);
+    
+    if (hand1Pinching && hand2Pinching && hotelModel && hotelModel.visible) {
+        // Two-handed scaling
+        const hand1Pos = getPinchPosition(hand1);
+        const hand2Pos = getPinchPosition(hand2);
         
-        if (indexTip && thumbTip) {
-            const distance = indexTip.position.distanceTo(thumbTip.position);
+        if (hand1Pos && hand2Pos) {
+            const currentDistance = hand1Pos.distanceTo(hand2Pos);
             
-            if (distance < 0.05) {
-                const handPosition = new THREE.Vector3();
-                handPosition.addVectors(indexTip.position, thumbTip.position).multiplyScalar(0.5);
-                
-                if (hand.userData.previousHandPosition) {
-                    const delta = handPosition.clone().sub(hand.userData.previousHandPosition);
-                    hand.userData.selected.position.add(delta);
-                    
-                    const rotationSpeed = 2;
-                    hand.userData.selected.rotation.y += delta.x * rotationSpeed;
-                    
-                    const scaleSpeed = 0.01;
-                    const scaleDelta = delta.y * scaleSpeed;
-                    const newScale = hand.userData.selected.scale.x + scaleDelta;
-                    if (newScale > 0.001 && newScale < 0.02) {
-                        hand.userData.selected.scale.set(newScale, newScale, newScale);
-                    }
-                }
-                
-                hand.userData.previousHandPosition = handPosition.clone();
+            if (initialPinchDistance === null) {
+                initialPinchDistance = currentDistance;
+                initialScale = hotelModel.scale.x;
             } else {
-                hand.userData.previousHandPosition = null;
+                const scaleFactor = currentDistance / initialPinchDistance;
+                const newScale = initialScale * scaleFactor;
+                
+                if (newScale > 0.001 && newScale < 0.02) {
+                    hotelModel.scale.set(newScale, newScale, newScale);
+                }
+            }
+        }
+    } else if ((hand1Pinching && !hand2Pinching) || (!hand1Pinching && hand2Pinching)) {
+        // Single hand movement/rotation
+        const activeHand = hand1Pinching ? hand1 : hand2;
+        const pinchPos = getPinchPosition(activeHand);
+        
+        if (pinchPos && hotelModel && hotelModel.visible) {
+            if (!activeHand.userData.previousPinchPosition) {
+                activeHand.userData.previousPinchPosition = pinchPos.clone();
+            } else {
+                const delta = pinchPos.clone().sub(activeHand.userData.previousPinchPosition);
+                
+                // Move the model
+                hotelModel.position.add(delta);
+                
+                // Rotate based on horizontal movement
+                const rotationSpeed = 2;
+                hotelModel.rotation.y += delta.x * rotationSpeed;
+                
+                activeHand.userData.previousPinchPosition = pinchPos.clone();
             }
         }
     } else {
-        hand.userData.previousHandPosition = null;
+        // Reset when not pinching
+        initialPinchDistance = null;
+        initialScale = null;
+        hand1.userData.previousPinchPosition = null;
+        hand2.userData.previousPinchPosition = null;
     }
+}
+
+function isPinching(hand) {
+    if (!hand.joints['index-finger-tip'] || !hand.joints['thumb-tip']) return false;
+    
+    const indexTip = hand.joints['index-finger-tip'];
+    const thumbTip = hand.joints['thumb-tip'];
+    const distance = indexTip.position.distanceTo(thumbTip.position);
+    
+    return distance < 0.05;
+}
+
+function getPinchPosition(hand) {
+    if (!hand.joints['index-finger-tip'] || !hand.joints['thumb-tip']) return null;
+    
+    const indexTip = hand.joints['index-finger-tip'];
+    const thumbTip = hand.joints['thumb-tip'];
+    
+    const pinchPos = new THREE.Vector3();
+    pinchPos.addVectors(indexTip.position, thumbTip.position).multiplyScalar(0.5);
+    
+    return pinchPos;
 }

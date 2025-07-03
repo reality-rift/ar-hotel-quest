@@ -16,9 +16,8 @@ A WebXR AR application that allows users to place and interact with a 3D hotel m
 2. Click "Start AR" button
 3. Look for a flat surface and tap to place the model
 4. Use pinch gestures to interact with the model:
-   - Pinch and move to translate
-   - Pinch and move horizontally to rotate
-   - Pinch and move vertically to scale
+   - Single hand pinch: Move and rotate the model
+   - Two hands pinch: Pull apart to scale up, push together to scale down
 
 ## Technologies
 
