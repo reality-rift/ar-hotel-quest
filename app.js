@@ -123,10 +123,16 @@ function init() {
             if (supported) {
                 startButton.style.display = 'inline-block';
                 statusElement.textContent = 'AR supported. Click Start AR to begin.';
+                
+                // Also add desktop options for development
+                enableDesktopPreview();
             } else {
                 statusElement.textContent = 'AR not supported on this device.';
                 enableDesktopPreview();
             }
+        }).catch(() => {
+            statusElement.textContent = 'Error checking AR support.';
+            enableDesktopPreview();
         });
     } else {
         statusElement.textContent = 'WebXR not available in this browser.';
@@ -350,7 +356,10 @@ function enableDesktopPreview() {
     startButton.textContent = 'Preview Model';
     startButton.style.display = 'inline-block';
     startButton.parentNode.insertBefore(mirrorButton, startButton);
-    statusElement.textContent = 'Desktop mode: Preview model or mirror VR session.';
+    
+    // Update status to show both options
+    const currentStatus = statusElement.textContent;
+    statusElement.textContent = currentStatus + ' | Desktop: Preview model or mirror VR session.';
     
     // Preview mode
     startButton.addEventListener('click', () => {
