@@ -17,6 +17,8 @@ let initialScale = null;
 let mirrorMode = false;
 let mirrorSocket = null;
 let modelSpotlight = null;
+let lightController = null;
+let lightControllerSelected = false;
 
 const statusElement = document.getElementById('status');
 const startButton = document.getElementById('startAR');
@@ -51,9 +53,28 @@ function init() {
     modelSpotlight.visible = false; // Hide until model is placed
     scene.add(modelSpotlight);
 
-    // Helper to visualize the spotlight (optional - remove for production)
-    // const spotlightHelper = new THREE.SpotLightHelper(modelSpotlight);
-    // scene.add(spotlightHelper);
+    // Create light controller (visual handle for moving the light)
+    const controllerGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+    const controllerMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffff00, 
+        emissive: 0xffff00,
+        emissiveIntensity: 0.5
+    });
+    lightController = new THREE.Mesh(controllerGeometry, controllerMaterial);
+    lightController.visible = false;
+    scene.add(lightController);
+    
+    // Add a line from controller to model to show light direction
+    const lineGeometry = new THREE.BufferGeometry();
+    const lineMaterial = new THREE.LineBasicMaterial({ 
+        color: 0xffff00, 
+        opacity: 0.5, 
+        transparent: true 
+    });
+    const lightLine = new THREE.Line(lineGeometry, lineMaterial);
+    lightLine.visible = false;
+    scene.add(lightLine);
+    lightController.userData.lightLine = lightLine;
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -193,9 +214,11 @@ function onSelectStart(event) {
         
         // Enable and position spotlight
         modelSpotlight.visible = true;
+        lightController.visible = true;
+        lightController.userData.lightLine.visible = true;
         updateSpotlightPosition();
         
-        statusElement.textContent = 'Model placed. One hand: move/rotate. Two hands: scale.';
+        statusElement.textContent = 'Model placed. Pinch yellow sphere to move light.';
     }
 }
 
@@ -258,6 +281,37 @@ function updateHandInteraction(hand) {
     // Check if both hands are pinching
     const hand1Pinching = isPinching(hand1);
     const hand2Pinching = isPinching(hand2);
+    
+    // Check if we're grabbing the light controller
+    if (hand === hand1 || hand === hand2) {
+        const pinchPos = getPinchPosition(hand);
+        if (pinchPos && lightController && lightController.visible) {
+            const distanceToLight = pinchPos.distanceTo(lightController.position);
+            
+            // If pinching near light controller, select it
+            if (distanceToLight < 0.1 && isPinching(hand) && !lightControllerSelected) {
+                lightControllerSelected = true;
+                hand.userData.selectedLight = true;
+                statusElement.textContent = 'Light controller selected. Move to position.';
+                return;
+            }
+            
+            // Move light controller if selected
+            if (hand.userData.selectedLight && isPinching(hand)) {
+                lightController.position.copy(pinchPos);
+                updateSpotlightFromController();
+                return;
+            }
+            
+            // Release light controller
+            if (hand.userData.selectedLight && !isPinching(hand)) {
+                hand.userData.selectedLight = false;
+                lightControllerSelected = false;
+                statusElement.textContent = 'Light positioned. Pinch model or light to move.';
+                return;
+            }
+        }
+    }
     
     if (hand1Pinching && hand2Pinching && hotelModel && hotelModel.visible) {
         // Two-handed scaling
@@ -395,6 +449,8 @@ function enableDesktopPreview() {
             
             // Enable spotlight for desktop preview
             modelSpotlight.visible = true;
+            lightController.visible = true;
+            lightController.userData.lightLine.visible = true;
             updateSpotlightPosition();
             
             startButton.style.display = 'none';
@@ -566,4 +622,46 @@ function updateSpotlightPosition() {
     // Point spotlight at the model
     modelSpotlight.target.position.copy(hotelModel.position);
     modelSpotlight.target.updateMatrixWorld();
+    
+    // Scale spotlight distance with model scale
+    const baseDistance = 10;
+    modelSpotlight.distance = baseDistance * hotelModel.scale.x / 0.005;
+    
+    // Update light controller position
+    if (lightController && !lightControllerSelected) {
+        lightController.position.copy(modelSpotlight.position);
+        updateLightLine();
+    }
+}
+
+function updateSpotlightFromController() {
+    if (!lightController || !modelSpotlight || !hotelModel) return;
+    
+    // Update spotlight position from controller
+    modelSpotlight.position.copy(lightController.position);
+    
+    // Point spotlight at the model
+    modelSpotlight.target.position.copy(hotelModel.position);
+    modelSpotlight.target.updateMatrixWorld();
+    
+    // Update the visual line
+    updateLightLine();
+}
+
+function updateLightLine() {
+    if (!lightController || !hotelModel) return;
+    
+    const line = lightController.userData.lightLine;
+    const positions = new Float32Array(6);
+    
+    // Line from light controller to model
+    positions[0] = lightController.position.x;
+    positions[1] = lightController.position.y;
+    positions[2] = lightController.position.z;
+    positions[3] = hotelModel.position.x;
+    positions[4] = hotelModel.position.y;
+    positions[5] = hotelModel.position.z;
+    
+    line.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    line.geometry.attributes.position.needsUpdate = true;
 }
