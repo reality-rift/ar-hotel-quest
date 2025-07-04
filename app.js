@@ -313,6 +313,9 @@ function updateHandInteraction(hand) {
         }
     }
     
+    // Don't process model interaction if light controller is selected
+    if (lightControllerSelected) return;
+    
     if (hand1Pinching && hand2Pinching && hotelModel && hotelModel.visible) {
         // Two-handed scaling
         const hand1Pos = getPinchPosition(hand1);
@@ -330,6 +333,7 @@ function updateHandInteraction(hand) {
                 
                 if (newScale > 0.001 && newScale < 0.02) {
                     hotelModel.scale.set(newScale, newScale, newScale);
+                    updateSpotlightPosition(); // Update light scale
                 }
             }
         }
@@ -337,6 +341,15 @@ function updateHandInteraction(hand) {
         // Single hand movement/rotation
         const activeHand = hand1Pinching ? hand1 : hand2;
         const pinchPos = getPinchPosition(activeHand);
+        
+        // Check if we're near the light controller first
+        if (pinchPos && lightController && lightController.visible) {
+            const distanceToLight = pinchPos.distanceTo(lightController.position);
+            if (distanceToLight < 0.15) {
+                // Too close to light controller, don't move model
+                return;
+            }
+        }
         
         if (pinchPos && hotelModel && hotelModel.visible) {
             if (!activeHand.userData.previousPinchPosition) {
