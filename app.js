@@ -16,6 +16,7 @@ let initialPinchDistance = null;
 let initialScale = null;
 let mirrorMode = false;
 let mirrorSocket = null;
+let modelSpotlight = null;
 
 const statusElement = document.getElementById('status');
 const startButton = document.getElementById('startAR');
@@ -36,6 +37,23 @@ function init() {
     directionalLight.position.set(0, 10, 0);
     directionalLight.castShadow = true;
     scene.add(directionalLight);
+
+    // Add spotlight above the model
+    modelSpotlight = new THREE.SpotLight(0xffffff, 1.5);
+    modelSpotlight.position.set(0, 2, 0);
+    modelSpotlight.angle = Math.PI / 4;
+    modelSpotlight.penumbra = 0.3;
+    modelSpotlight.decay = 2;
+    modelSpotlight.distance = 10;
+    modelSpotlight.castShadow = true;
+    modelSpotlight.shadow.mapSize.width = 1024;
+    modelSpotlight.shadow.mapSize.height = 1024;
+    modelSpotlight.visible = false; // Hide until model is placed
+    scene.add(modelSpotlight);
+
+    // Helper to visualize the spotlight (optional - remove for production)
+    // const spotlightHelper = new THREE.SpotLightHelper(modelSpotlight);
+    // scene.add(spotlightHelper);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -172,6 +190,11 @@ function onSelectStart(event) {
         hotelModel.position.setFromMatrixPosition(reticle.matrix);
         hotelModel.visible = true;
         reticle.visible = false;
+        
+        // Enable and position spotlight
+        modelSpotlight.visible = true;
+        updateSpotlightPosition();
+        
         statusElement.textContent = 'Model placed. One hand: move/rotate. Two hands: scale.';
     }
 }
@@ -277,6 +300,9 @@ function updateHandInteraction(hand) {
                 // Simply rotate around the model's local Y axis (center rotation)
                 hotelModel.rotateY(rotationDelta);
                 
+                // Update spotlight position
+                updateSpotlightPosition();
+                
                 activeHand.userData.previousPinchPosition = pinchPos.clone();
             }
         }
@@ -366,6 +392,11 @@ function enableDesktopPreview() {
         if (!hotelModel.visible && !mirrorMode) {
             hotelModel.position.set(0, 0, -1);
             hotelModel.visible = true;
+            
+            // Enable spotlight for desktop preview
+            modelSpotlight.visible = true;
+            updateSpotlightPosition();
+            
             startButton.style.display = 'none';
             mirrorButton.style.display = 'none';
             statusElement.textContent = 'Desktop preview: Use mouse to rotate, scroll to zoom.';
@@ -522,4 +553,17 @@ function broadcastVRData() {
     } catch (e) {
         console.error('Error broadcasting VR data:', e);
     }
+}
+
+function updateSpotlightPosition() {
+    if (!hotelModel || !modelSpotlight) return;
+    
+    // Position spotlight above the model
+    const modelHeight = 0.5; // Adjust based on your model's height
+    modelSpotlight.position.copy(hotelModel.position);
+    modelSpotlight.position.y += modelHeight;
+    
+    // Point spotlight at the model
+    modelSpotlight.target.position.copy(hotelModel.position);
+    modelSpotlight.target.updateMatrixWorld();
 }
