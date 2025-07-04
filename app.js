@@ -53,7 +53,7 @@ function init() {
     scene.add(reticle);
 
     const loader = new GLTFLoader();
-    loader.load('./HotelB_AR.glb', function (gltf) {
+    loader.load('./HotelB_AR.glb?v=' + Date.now(), function (gltf) {
         hotelModel = gltf.scene;
         hotelModel.scale.set(0.005, 0.005, 0.005);
         hotelModel.visible = false;
